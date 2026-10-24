@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.1";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -352,6 +352,36 @@ $("#sideCollapseBtn").addEventListener("click", () => {
   $("#sideCollapseBtn").setAttribute("aria-label", collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar");
 });
 
+/* TD-0014: nút thu gọn/mở rộng một danh sách, nhớ lựa chọn vào
+   localStorage (đúng mẫu sidebar collapse). */
+function setupListToggle(btn, body, key) {
+  if (!btn || !body) return;
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(key) === "1"; } catch {}
+  const paint = () => {
+    body.hidden = collapsed;
+    btn.innerHTML = collapsed ? "▸ Mở rộng" : "▾ Thu gọn";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  };
+  btn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    try { localStorage.setItem(key, collapsed ? "1" : "0"); } catch {}
+    paint();
+  });
+  paint();
+}
+
+/* TD-0014: fade mép phải của dải chip khi còn cuộn ngang được. */
+function updateChipsFade() {
+  const wrap = document.getElementById("statusChipsWrap");
+  const box = document.getElementById("statusChips");
+  if (!wrap || !box) return;
+  wrap.classList.toggle("has-more",
+    box.scrollWidth > box.clientWidth + 4
+    && box.scrollLeft < box.scrollWidth - box.clientWidth - 4);
+}
+window.addEventListener("resize", updateChipsFade);
+
 /* ============================= modals ============================= */
 
 function openModal(html) {
@@ -534,9 +564,12 @@ async function renderTasks() {
           ${users.filter((u) => u.id !== me.id).map((u) => `<option value="${u.id}">${esc(u.display_name)}</option>`).join("")}</select>
       </form>
     </details>
-    <div class="status-chips" id="statusChips" aria-label="Lọc theo trạng thái"></div>
-    <div id="taskList" class="list"><div class="loading">⏳ Đang tải…</div></div>`;
+    <div class="status-chips-wrap" id="statusChipsWrap"><div class="status-chips" id="statusChips" aria-label="Lọc theo trạng thái"></div></div>
+    <div class="list-head"><span class="list-title">📋 Danh sách việc <span class="list-count" id="taskListCount"></span></span><button type="button" class="btn btn-small" id="taskListToggle">▾ Thu gọn</button></div>
+    <div id="taskList" class="list list-scroll"><div class="loading">⏳ Đang tải…</div></div>`;
   $("#tasksCreate").addEventListener("click", () => navigate("create"));
+  setupListToggle($("#taskListToggle"), $("#taskList"), "gv-tasklist-collapsed");
+  $("#statusChips").addEventListener("scroll", updateChipsFade, { passive: true });
   let lastCounts = null;
   const paintChips = () => {
     const box = $("#statusChips");
@@ -557,6 +590,7 @@ async function renderTasks() {
         paintChips();
         load().catch((e) => toast(e.message, true));
       }));
+    updateChipsFade();
   };
   const load = async () => {
     const params = new URLSearchParams(new FormData($("#taskFilters")));
@@ -572,6 +606,8 @@ async function renderTasks() {
           ? "Không có việc nào ở trạng thái này."
           : "Không tìm thấy việc nào khớp bộ lọc."}</div>`;
     bindTaskCards($("#taskList"));
+    const countEl = $("#taskListCount");
+    if (countEl) countEl.textContent = data.items.length ? `· ${data.items.length} việc` : "";
   };
   paintChips();
   $("#taskFilters").addEventListener("input", () => load().catch((e) => toast(e.message, true)));
@@ -1076,10 +1112,12 @@ async function renderReview() {
   const data = await api("/api/review-queue");
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>⏳ Chờ duyệt</h2><p>${data.items.length} thẻ kênh đang chờ người duyệt xử lý.</p></div></div>
-    <div class="list">${data.items.map((o) => outputCard(o, {
+    <div class="list-head"><span class="list-title">⏳ Thẻ kênh chờ duyệt <span class="list-count">${data.items.length ? `· ${data.items.length} thẻ` : ""}</span></span><button type="button" class="btn btn-small" id="reviewListToggle">▾ Thu gọn</button></div>
+    <div class="list list-scroll" id="reviewList">${data.items.map((o) => outputCard(o, {
       code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
       hint: o.task_hint || "",
     })).join("") || `<div class="empty">🎉 Không có thẻ kênh nào đang chờ duyệt.</div>`}</div>`;
+  setupListToggle($("#reviewListToggle"), $("#reviewList"), "gv-review-collapsed");
   // Clicking a queue card (outside its buttons) opens the task.
   $$("[data-task]").forEach(() => {});
   $$(".channel-card").forEach((card, i) => {
@@ -1098,10 +1136,12 @@ async function renderSchedule() {
   const data = await api("/api/scheduled");
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>🕐 Lịch đăng</h2><p>Tất cả bài đang đặt lịch, xếp theo giờ tăng dần.</p></div></div>
-    <div class="list">${data.items.map((o) => outputCard(o, {
+    <div class="list-head"><span class="list-title">🕐 Bài đặt lịch <span class="list-count">${data.items.length ? `· ${data.items.length} bài` : ""}</span></span><button type="button" class="btn btn-small" id="scheduleListToggle">▾ Thu gọn</button></div>
+    <div class="list list-scroll" id="scheduleList">${data.items.map((o) => outputCard(o, {
       code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
       hint: o.task_hint || "",
     })).join("") || `<div class="empty">Chưa có bài nào đang đặt lịch.</div>`}</div>`;
+  setupListToggle($("#scheduleListToggle"), $("#scheduleList"), "gv-schedule-collapsed");
   $$(".channel-card").forEach((card, i) => {
     card.style.cursor = "pointer";
     card.addEventListener("click", (event) => {
@@ -1222,10 +1262,12 @@ async function renderUsers() {
       </form>
       <p class="muted small">Người được tạo dùng mật khẩu tạm đăng nhập lần đầu rồi tự đổi trong mục 🔐.</p>
     </section>
-    <div class="user-grid" style="margin-top:1rem">
+    <div class="list-head" style="margin-top:1rem;margin-bottom:0"><span class="list-title">👥 Tài khoản <span class="list-count">${data.items.length ? `· ${data.items.length} tài khoản` : ""}</span></span><button type="button" class="btn btn-small" id="usersListToggle">▾ Thu gọn</button></div>
+    <div class="user-grid list-scroll" id="usersList" style="margin-top:1rem">
       ${data.items.map(userCard).join("")}
     </div>
     <p class="muted small center" style="margin-top:1rem">Phiên bản ${APP_VERSION}</p>`;
+  setupListToggle($("#usersListToggle"), $("#usersList"), "gv-users-collapsed");
   $("#createUserForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.target);

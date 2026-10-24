@@ -550,3 +550,46 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   200 + JSON 0.5.0, và grep 1 giờ chỉ có đúng 1 dòng 501 — kết
   luận là probe méo mó thoáng qua lúc tunnel nối lại, không phải
   lỗi phục vụ; cần theo dõi nếu tái diễn.
+
+## TD-0014 — Giao diện: dải chip nổi bật, danh sách gập/mở, cuộn đúng, sửa thông báo tràn link (bản 0.5.1, 24/10/2026)
+- Người dùng phản hồi qua 2 ảnh chụp: hàng chip lọc ngang "nhìn
+  chìm" và thẻ thông báo "Bài đã được đăng" của CV-0013 bị link
+  Facebook permalink dài tràn ra khỏi thẻ; kèm yêu cầu chung:
+  danh sách bên dưới "làm collapse và có button thu nhỏ", "nói
+  chung các danh sách nên làm scroll".
+- Sửa (CHỈ CSS/JS hiển thị, không đụng API/schema/audit/phân quyền/
+  logic nghiệp vụ/TD-0013/bot/tunnel/vapid/uploads):
+  (1) Dải chip thành khối riêng nền teal nhạt (sáng #f0fdfa, tối
+  #134e4a), chữ chip 800, chip chưa chọn viền teal rõ, chip đang
+  chọn giữ nền teal đậm + chữ trắng + số đếm; vẫn trượt ngang, có
+  fade mép phải khi còn cuộn được (lớp has-more do JS đo trạng
+  thái cuộn thật + resize).
+  (2) Đầu danh sách việc/chờ duyệt/lịch đăng/người dùng thêm nút
+  "▾ Thu gọn / ▸ Mở rộng" kèm số lượng, gập cả thân danh sách,
+  nhớ localStorage (gv-tasklist-/gv-review-/gv-schedule-/
+  gv-users-collapsed, mẫu sidebar collapse). Nhóm ngày thông báo
+  đã gập được từ TD-0011 nên không chồng thêm nút.
+  (3) Cuộn theo từng màn: desktop (≥821px) các danh sách chính có
+  vùng cuộn dọc riêng (max-height calc(100dvh - 240px)); mobile
+  giữ cuộn trang tự nhiên, tuyệt đối không tràn ngang; hoạt động
+  Tổng quan giữ vùng 440px từ TD-0011; nhóm thông báo giữ cuộn
+  trang.
+  (4) Thông báo ngắt link dài: overflow-wrap:anywhere trên
+  .row-main và .muted trong .notification + min-width:0 cho thẻ;
+  áp cả màn Thông báo lẫn khối hoạt động Tổng quan.
+- Kiểm thử: webapp 54/54, bot 230/230. Kiểm chứng hiển thị thật
+  bằng Playwright (Chromium headless, cài mới qua pip) trên bản
+  sao bot.db (probe copy, không đụng dữ liệu thật): 10 ảnh ở
+  320/390/1440px, sáng + tối — dải chip nổi bật + fade mép phải,
+  gập/mở danh sách và nhớ trạng thái sau reload, thẻ thông báo
+  link dài nằm gọn trong thẻ ở cả sáng lẫn tối, tràn ngang 0px ở
+  mọi khung. Lưu ý probe: app không có hash router (chỉ navigate()
+  qua nút bấm) nên probe phải gọi navigate() thay vì đổi hash URL;
+  toast "Xin chào" sau đăng nhập che tạm một phần thẻ trong ảnh
+  chụp, không phải lỗi giao diện.
+- Triển khai: bản 0.5.0 → 0.5.1 (VERSION, APP_VERSION, ?v=0.5.1, SW
+  cache v9); restart webapp-giao-viec; health local + public đều
+  0.5.1, login public 200, asset public ?v=0.5.1 chứa đủ dấu vết
+  mới, đủ 5 service active. Sao lưu trước khi sửa tại
+  data/backup-td14-20261024-144916/ (bản sao webapp + bot.db).
+  SRS: TD-0014 (cùng TD-0012, TD-0013) vẫn ⏳ chờ gộp sau.

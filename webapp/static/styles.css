@@ -96,15 +96,27 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(15,118,110,.18);b
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
 .pill.danger{background:var(--danger-soft);color:var(--danger)}
 .pill.info{background:var(--blue-soft);color:var(--blue)}
-.list{display:grid;gap:.75rem}
+.list{display:grid;gap:.75rem;min-width:0}
+/* TD-0014: đầu danh sách có nút thu gọn/mở rộng; vùng cuộn dọc riêng
+   chỉ trên desktop (mobile giữ cuộn trang tự nhiên, không tràn ngang). */
+.list-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:.2rem 0 .6rem}
+.list-head .list-title{font-weight:800;display:flex;align-items:center;gap:.45rem;min-width:0}
+.list-head .list-title .list-count{color:var(--muted);font-weight:700;white-space:nowrap}
+@media (min-width:821px){
+  .list-scroll{max-height:calc(100dvh - 240px);overflow-y:auto;padding-right:.25rem}
+}
 .row-item{display:flex;gap:.8rem;align-items:flex-start;justify-content:space-between}
 .row-main{min-width:0;flex:1}
 .row-main strong{overflow-wrap:anywhere}
 .meta-line{overflow-wrap:anywhere;margin:.18rem 0}
 .filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(140px,1fr));gap:.7rem;margin-bottom:.6rem}
-.status-chips{display:flex;gap:.45rem;overflow-x:auto;padding:.15rem .05rem .55rem;margin-bottom:.35rem;scrollbar-width:none}
+/* TD-0014: dải chip lọc nổi bật — nền teal nhạt riêng, chip đậm, viền
+   rõ, fade mép phải khi còn cuộn được (lớp has-more do JS bật/tắt). */
+.status-chips-wrap{position:relative;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:16px;padding:.45rem .5rem;margin-bottom:.6rem}
+.status-chips{display:flex;gap:.45rem;overflow-x:auto;padding:.15rem .05rem .4rem;margin-bottom:0;scrollbar-width:none}
 .status-chips::-webkit-scrollbar{display:none}
-.status-chip{flex:0 0 auto;border:1.5px solid var(--line);background:#fff;color:#24423f;border-radius:999px;padding:.42rem .75rem;font-weight:700;font-size:.9rem;white-space:nowrap}
+.status-chips-wrap.has-more::after{content:"";position:absolute;top:.45rem;bottom:.45rem;right:.5rem;width:2.25rem;background:linear-gradient(to right,transparent,#f0fdfa);pointer-events:none}
+.status-chip{flex:0 0 auto;border:1.5px solid #5eead4;background:#fff;color:#24423f;border-radius:999px;padding:.42rem .75rem;font-weight:800;font-size:.9rem;white-space:nowrap}
 .status-chip.active{background:var(--teal);border-color:var(--teal);color:#fff}
 .status-chip .chip-count{background:rgba(15,118,110,.12);border-radius:999px;padding:.05rem .45rem;font-size:.8rem;font-weight:800}
 .status-chip.active .chip-count{background:rgba(255,255,255,.25)}
@@ -202,7 +214,11 @@ th{background:#f8fafc}
 /* ---------- users / notifications ---------- */
 .user-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:1rem}
 .user-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.5rem;margin-top:.7rem}
-.notification{display:flex;gap:.75rem;align-items:flex-start;width:100%;text-align:left}
+.notification{display:flex;gap:.75rem;align-items:flex-start;width:100%;text-align:left;min-width:0}
+/* TD-0014: thông báo ngắt được link dài không khoảng trắng (vết tràn
+   của thẻ "Bài đã được đăng" CV-0013). */
+.notification .row-main{overflow-wrap:anywhere}
+.notification .muted{overflow-wrap:anywhere}
 .notification.unread{border-color:#5eead4;background:#f0fdfa}
 .notification .dot{width:10px;height:10px;border-radius:50%;background:#cbd5e1;margin-top:.45rem;flex:0 0 auto}
 .notification.unread .dot{background:var(--teal)}
@@ -297,7 +313,9 @@ th{background:#f8fafc}
   .btn:hover{border-color:#64748b}
   .btn-soft{background:#134e4a;color:#99f6e4}
   .pill{background:#334155;color:#e2e8f0}
-  .status-chip{background:#1e293b;color:#e2e8f0}
+  .status-chip{background:#1e293b;color:#e2e8f0;border-color:#2dd4bf}
+  .status-chips-wrap{background:#134e4a;border-color:#334155}
+  .status-chips-wrap.has-more::after{background:linear-gradient(to right,transparent,#134e4a)}
   .empty{background:#1e293b}
   .channel-chip{background:#334155;color:#e2e8f0}
   .file-tile{background:#1e293b}

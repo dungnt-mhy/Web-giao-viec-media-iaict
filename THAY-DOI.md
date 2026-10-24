@@ -359,6 +359,52 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0014 — Giao diện: dải chip lọc nổi bật, danh sách gập/mở được, danh sách cuộn đúng, sửa thông báo tràn link dài (bản 0.5.1)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (2 phản hồi qua ảnh
+  chụp: hàng chip lọc ngang "nhìn chìm, cần nổi bật lên để dễ nhận
+  biết", danh sách bên dưới "làm collapse và có button thu nhỏ,
+  nói chung các danh sách nên làm scroll"; và thẻ thông báo "Bài đã
+  được đăng" của CV-0013 bị link Facebook permalink dài tràn ra
+  khỏi thẻ).
+- Nội dung thay đổi (CHỈ giao diện/bố cục, KHÔNG đổi API, schema,
+  audit/state semantics, phân quyền, logic nghiệp vụ, logic target
+  Facebook của TD-0013, luồng bot, tunnel, vapid.json, uploads):
+  (1) Hàng chip lọc: thành dải riêng nền teal nhạt (sáng #f0fdfa,
+  tối #134e4a), chữ chip đậm hơn (800), chip chưa chọn viền teal
+  rõ, chip đang chọn giữ nền teal đậm + chữ trắng + số đếm; vẫn
+  trượt ngang như cũ và có fade ở mép phải khi còn cuộn được
+  (lớp has-more bật/tắt bằng JS theo trạng thái cuộn thật).
+  (2) Danh sách có nút thu nhỏ: đầu danh sách việc, chờ duyệt, lịch
+  đăng, người dùng thêm nút "▾ Thu gọn / ▸ Mở rộng" kèm số lượng;
+  bấm gập cả phần thân danh sách, bấm nữa mở ra; lựa chọn nhớ vào
+  localStorage (đúng mẫu sidebar collapse đã có: gv-tasklist-,
+  gv-review-, gv-schedule-, gv-users-collapsed). Nhóm ngày của
+  thông báo/lịch đăng đã gập được từ TD-0011 nên KHÔNG chồng thêm
+  nút.
+  (3) Quyết định cuộn theo từng màn (ghi rõ): desktop (≥821px) các
+  danh sách chính (việc, chờ duyệt, lịch đăng, người dùng) có vùng
+  cuộn dọc riêng (max-height calc(100dvh - 240px), overflow-y:auto)
+  để bộ lọc/tiêu đề luôn thấy; mobile (≤820px) giữ cuộn trang tự
+  nhiên (tránh cuộn lồng khó dùng trên màn nhỏ) nhưng tuyệt đối
+  không tràn ngang (html/body đã overflow-x:hidden + min-width:0
+  cho .list và thẻ thông báo). Danh sách hoạt động trên Tổng quan
+  giữ vùng cuộn 440px từ TD-0011, không đổi. Nhóm thông báo theo
+  ngày giữ cuộn trang (nội dung mỗi nhóm ngắn, đã gập được).
+  (4) Sửa thông báo tràn link dài: khối chữ trong thẻ thông báo
+  ngắt được chuỗi dài không khoảng trắng (overflow-wrap:anywhere
+  trên .row-main và .muted trong .notification, min-width:0 cho
+  thẻ), áp cho cả màn Thông báo lẫn khối hoạt động trên Tổng quan
+  (cùng dùng notificationRow).
+  (5) Bản app 0.5.0 → 0.5.1 (VERSION, APP_VERSION, ?v=0.5.1, SW
+  cache v9, dòng phiên bản trong app). Không đụng nút Giao việc
+  Mẫu 1 (58px, nhô ~7px, gradient, viền trắng, không đổ bóng),
+  nhãn một dòng, badge tròn, dark mode theo hệ thống.
+- Ảnh hưởng: chỉ thẩm mỹ/bố cục. Kiểm thử: webapp 54/54 + test mới,
+  bot 230/230.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

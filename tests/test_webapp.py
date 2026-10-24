@@ -596,20 +596,31 @@ class WebAppTestCase(unittest.TestCase):
         # hơn, bớt nhô; mục đang chọn nền trong suốt, không che chữ).
         # TD-0013: bản 0.5.0 — version nhất quán + chọn nhiều nơi
         # đăng Facebook (modal checkbox, endpoint facebook-targets).
+        # TD-0014: bản 0.5.1 — version nhất quán + dải chip nổi bật,
+        # nút thu gọn danh sách, ngắt link dài trong thông báo.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.0")
+        self.assertEqual(data["version"], "0.5.1")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.0", html)
+        self.assertIn("?v=0.5.1", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.0", js)
+        self.assertIn("0.5.1", js)
         self.assertIn("fab-circle", js)
+        # TD-0014: dải chip bọc + nút thu gọn danh sách (nhớ localStorage).
+        self.assertIn("statusChipsWrap", js)
+        self.assertIn("has-more", js)
+        self.assertIn("setupListToggle", js)
+        self.assertIn("gv-tasklist-collapsed", js)
+        self.assertIn("gv-review-collapsed", js)
+        self.assertIn("gv-schedule-collapsed", js)
+        self.assertIn("gv-users-collapsed", js)
+        self.assertIn("list-scroll", js)
         self.assertIn("facebook-targets", js)
         self.assertIn("data-fb-place", js)
         self.assertIn("Đăng lên", js)
@@ -636,9 +647,17 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("width:52px;height:52px", css)
         self.assertIn(".bottom-nav .nav-btn.active{color:var(--teal-dark);"
                       "font-weight:800;background:transparent}", css)
+        # TD-0014: dải chip nổi bật, đầu danh sách, vùng cuộn desktop,
+        # thông báo ngắt link dài.
+        self.assertIn("status-chips-wrap", css)
+        self.assertIn("status-chips-wrap.has-more::after", css)
+        self.assertIn("list-head", css)
+        self.assertIn("list-scroll", css)
+        self.assertIn(".notification .row-main{overflow-wrap:anywhere}", css)
+        self.assertIn(".notification .muted{overflow-wrap:anywhere}", css)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v8", raw)
-        self.assertIn(b"app.js?v=0.5.0", raw)
+        self.assertIn(b"giao-viec-iaict-v9", raw)
+        self.assertIn(b"app.js?v=0.5.1", raw)
 
     # ------------------------------------------------ GĐ2: uploads/files
     def test_upload_create_task_files_download_and_range(self):
