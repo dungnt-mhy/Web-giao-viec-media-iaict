@@ -77,10 +77,11 @@ thật).
 (qua SQLite backup API, `integrity_check` = ok; 1 người dùng,
 12 việc, `task_seq` = 12 — khớp số liệu sau khi áp). Sau khi áp:
 Store của bot mở DB thật bình thường, dữ liệu nguyên vẹn.
-⚠️ Tại thời điểm kiểm tra cuối, service bot không chạy vì **máy ảo
-vừa bị thay mới** (uptime 3 phút, đăng ký systemd bị mất — sự cố môi
-trường đã biết, không liên quan migration); chờ khôi phục service
-theo quy trình quen thuộc của dự án bot.
+ℹ️ Cập nhật cùng ngày 24/10/2026: tại thời điểm kiểm tra cuối, service
+bot không chạy vì **máy ảo vừa bị thay mới** (đăng ký systemd bị mất —
+sự cố môi trường đã biết, không liên quan migration). Service đã được
+cài lại và khởi động ngay sau đó theo quy trình quen thuộc của dự án
+bot; bot chạy bình thường, dữ liệu nguyên vẹn.
 
 ## Chạy server
 
