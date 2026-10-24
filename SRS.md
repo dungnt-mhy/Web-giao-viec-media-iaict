@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản SRS | **1.0** (bản gốc — baseline) |
+| Phiên bản SRS | **1.1** (tổng hợp GĐ2 — TD-0006) |
 | Ngày hiệu lực | 24/10/2026 |
 | Trạng thái | Đã chốt theo bản thiết kế được duyệt ngày 24/10/2026 |
 | Sản phẩm | Web App Giao Việc (PWA) — hệ thống giao việc, duyệt và đăng bài truyền thông đa kênh của IAICT |
@@ -154,11 +154,11 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-TASK-01 | Tạo việc theo wizard 3 bước: (1) tải tư liệu, (2) ghi/sửa gợi ý, (3) chọn kênh theo quy tắc 2.3, bấm "🚀 Chốt! Gửi Muse" là hoàn tất tạo việc | 📋 thiết kế đã chốt — Web App GĐ2 (bot ✅) |
+| FR-TASK-01 | Tạo việc theo wizard 3 bước: (1) tải tư liệu, (2) ghi/sửa gợi ý, (3) chọn kênh theo quy tắc 2.3, bấm "🚀 Chốt! Gửi Muse" là hoàn tất tạo việc | ✅ Web App GĐ2 (bot ✅) |
 | FR-TASK-02 | Mỗi việc có mã `CV-xxxx` duy nhất tăng dần liên tục giữa cả bot và Web App; hiển thị kèm **người tạo** và **thời gian tạo (giờ Việt Nam)** | ✅ lõi dùng chung |
-| FR-TASK-03 | Tải tư liệu trực tiếp lên Web App (ảnh, video, tệp) thay cho gửi qua Telegram; tư liệu gắn với việc và được Muse truy cập để làm bài | 📋 GĐ2 |
-| FR-TASK-04 | Danh sách việc có tìm kiếm và lọc theo trạng thái / kênh / người tạo, có phân trang | ✅ API GĐ1; giao diện 📋 GĐ2 |
-| FR-TASK-05 | Việc giữ nguyên gợi ý và tư liệu gốc làm hồ sơ; người tạo sửa được gợi ý của việc mình | ✅ bot; giao diện Web App 📋 GĐ2 |
+| FR-TASK-03 | Tải tư liệu trực tiếp lên Web App (ảnh, video, tệp) thay cho gửi qua Telegram; tư liệu gắn với việc và được Muse truy cập để làm bài; giới hạn 200MB/tệp, lưu đúng cấu trúc `data/files/<MÃ VIỆC>/` của bot, hai điểm vào: kèm lúc tạo việc và gắn thêm vào việc đã có | ✅ GĐ2 |
+| FR-TASK-04 | Danh sách việc có tìm kiếm và lọc theo trạng thái / kênh / người tạo, có phân trang | ✅ API GĐ1 + giao diện GĐ2 |
+| FR-TASK-05 | Việc giữ nguyên gợi ý và tư liệu gốc làm hồ sơ; người tạo sửa được gợi ý của việc mình | ✅ bot + Web App GĐ2 |
 | FR-TASK-06 | Mọi vai trò đã được cấp quyền (kể cả Cộng tác viên) đều tạo việc được; tài khoản chờ cấp quyền bị chặn (403) | ✅ GĐ1 |
 
 ### 3.3 Thẻ việc và thẻ kênh (mô hình "Cách A") ✅ (đã chốt và chạy ở bot; Web App kế thừa)
@@ -176,15 +176,15 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-PUB-01 | Luồng trạng thái thẻ kênh: Nháp → Chờ duyệt → Đã duyệt (chờ đăng) → Đã đăng; các nhánh: Trả lại (kèm lý do → viết lại), Hủy bài, Thu hồi sau đăng | ✅ bot; Web App theo GĐ2 |
+| FR-PUB-01 | Luồng trạng thái thẻ kênh: Nháp → Chờ duyệt → Đã duyệt (chờ đăng) → Đã đăng; các nhánh: Trả lại (kèm lý do → viết lại), Hủy bài, Thu hồi sau đăng | ✅ bot + Web App GĐ2 |
 | FR-PUB-02 | Người duyệt **Trả lại** phải nhập nội dung cần sửa; yêu cầu được ghi nguyên văn và chuyển cho Muse viết lại; người tạo nhận lại thẻ khi có bản sửa mới | ✅ bot |
 | FR-PUB-03 | Người tạo có nút **Sửa lại** trên thẻ kênh của việc mình (khác nút Trả lại của người duyệt) với cùng cơ chế ghi yêu cầu nguyên văn | ✅ bot |
 | FR-PUB-04 | Nút Đăng trên thẻ kênh chỉ là **lệnh đăng**: trạng thái chỉ chuyển Đã đăng **sau khi** Muse đăng thật và gắn link bài; không tự báo đã đăng khi chưa có link thật | ✅ bot |
-| FR-PUB-05 | Riêng Facebook: khi bấm Đăng phải chọn nơi đăng ngay trong cùng giao diện — **trang cá nhân Nguyễn Trọng Minh Huy** hoặc **Fanpage Minhy** — rồi lệnh đăng mới được ghi kèm nơi đăng đã chốt; có nút hủy tại bước chọn | ✅ bot; Web App 📋 GĐ2 |
+| FR-PUB-05 | Riêng Facebook: khi bấm Đăng phải chọn nơi đăng ngay trong cùng giao diện — **trang cá nhân Nguyễn Trọng Minh Huy** hoặc **Fanpage Minhy** — rồi lệnh đăng mới được ghi kèm nơi đăng đã chốt; có nút hủy tại bước chọn | ✅ bot + Web App GĐ2 |
 | FR-PUB-06 | Thu hồi bài Facebook = **xóa thật** trên Facebook, kiểm chứng biến mất rồi mới đổi trạng thái Thu hồi và thông báo; kênh khác thu hồi trong hệ thống | ✅ bot |
 | FR-PUB-07 | Việc của chính Admin tạo: bỏ qua Gửi duyệt/Duyệt (xem 2.2) | ✅ |
 
-### 3.5 Đặt lịch đăng ✅ (bot) / 📋 giao diện Web App ở GĐ2
+### 3.5 Đặt lịch đăng ✅ (bot + Web App GĐ2)
 
 | Mã | Yêu cầu |
 |---|---|
@@ -193,7 +193,7 @@ Quy tắc bổ sung:
 | FR-SCH-03 | Cảnh báo (không chặn) khi bài cùng kênh đặt cách nhau chưa tới 1 giờ hoặc vừa có bài đăng trong vòng 1 giờ trước giờ chọn |
 | FR-SCH-04 | Đến giờ, hệ thống tự phát lệnh đăng kèm nơi đăng đã chốt; có màn hình quản lý tập trung mọi bài đang đặt lịch, thao tác được ngay (Đăng ngay / Đổi lịch / Hủy lịch) |
 
-### 3.6 Kênh video ✅ (bot GĐ2) / 📋 Web App GĐ2
+### 3.6 Kênh video ✅ (bot + Web App GĐ2 — xem video nháp ngay trong trang)
 
 | Mã | Yêu cầu |
 |---|---|
@@ -206,12 +206,12 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-STAT-01 | Thống kê theo kỳ: Hôm nay / Tuần này / Tháng này / Tất cả; đếm việc và đầu ra theo trạng thái, theo kênh (gồm video), theo người tạo | ✅ API GĐ1 (dùng lại `stats.py` của bot); giao diện 📋 GĐ2 |
-| FR-STAT-02 | Biểu đồ trực quan; xuất CSV (BOM UTF-8) và xuất Excel | ✅ bot; Web App 📋 GĐ2 |
+| FR-STAT-01 | Thống kê theo kỳ: Hôm nay / Tuần này / Tháng này / Tất cả; đếm việc và đầu ra theo trạng thái, theo kênh (gồm video), theo người tạo | ✅ API GĐ1 (dùng lại `stats.py` của bot) + giao diện GĐ2 |
+| FR-STAT-02 | Biểu đồ trực quan; xuất CSV (BOM UTF-8) và xuất Excel | ✅ bot + Web App GĐ2 |
 | FR-STAT-03 | Chỉ người duyệt trở lên xem được thống kê | ✅ |
 | FR-STAT-04 | Tin tổng kết ngày gửi Admin (hiện qua Telegram 20:00 giờ VN; khi chuyển hẳn sang Web App sẽ thay bằng thông báo trong Web App) | ✅ bot; 📋 GĐ3 |
 
-### 3.8 Thông báo 📋 GĐ3
+### 3.8 Thông báo 🔶 (hộp thông báo trong app ✅ GĐ2; Web Push 📋 GĐ3)
 
 | Mã | Yêu cầu |
 |---|---|
@@ -223,7 +223,7 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-USER-01 | Admin xem danh sách tài khoản, tạo tài khoản mới (tên, email/SĐT, mật khẩu tạm, vai trò, quyền đăng), đổi vai trò, thu hồi quyền | ✅ API GĐ1 (theo `roles.can_grant`); giao diện 📋 GĐ3 |
+| FR-USER-01 | Admin xem danh sách tài khoản, tạo tài khoản mới (tên, email/SĐT, mật khẩu tạm, vai trò, quyền đăng), đổi vai trò, thu hồi quyền | ✅ API GĐ1 (theo `roles.can_grant`) + giao diện GĐ2 |
 | FR-USER-02 | Phó Admin chỉ cấp được vai trò cấp dưới mình (Nhân viên, Cộng tác viên) | ✅ |
 | FR-USER-03 | API danh sách người dùng không bao giờ trả về bản băm mật khẩu | ✅ GĐ1 |
 | FR-USER-04 | Mọi thao tác cấp/thu hồi/đổi vai trò đều ghi audit log | ✅ |
@@ -233,7 +233,7 @@ Quy tắc bổ sung:
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
 | FR-INT-01 | Hệ thống quét/nhận diện việc mới và đầu ra cần viết lại (kể cả chưa có nháp) để Muse tiếp tục làm mà không cần người dùng nhắc; "xong" chỉ tính khi thẻ kênh kèm bản nháp đã tới tay người nhận | ✅ quy trình bot; giữ nguyên với Web App |
-| FR-INT-02 | Muse gắn nháp/video/link đã đăng qua cơ chế tương đương botctl cho đầu ra của Web App; trạng thái chỉ đổi khi có bằng chứng thật (link bài, tệp video) | 🔶 GĐ1 có API đọc/ghi nền; hoàn thiện cùng GĐ2 |
+| FR-INT-02 | Muse gắn nháp/video/link đã đăng qua cơ chế tương đương botctl cho đầu ra của Web App; trạng thái chỉ đổi khi có bằng chứng thật (link bài, tệp video) | ✅ GĐ2 — API thao tác thẻ kênh ghi đúng tên audit và chuyển trạng thái của bot |
 | FR-INT-03 | Mọi thao tác nghiệp vụ (tạo việc, duyệt, trả lại, đăng, đặt lịch, thu hồi, cấp quyền…) ghi audit log gồm người thực hiện, hành động, đối tượng, thời gian | ✅ |
 
 ---
@@ -250,7 +250,7 @@ Quy tắc bổ sung:
 | NFR-PERF-01 | Quy mô đội nội bộ nhỏ; API danh sách có phân trang; thao tác thường dùng phản hồi dưới 1 giây trên máy chủ hiện tại |
 | NFR-USE-01 | Giao diện tiếng Việt có dấu; dùng được bằng một tay trên điện thoại; chuẩn hiển thị mỗi dòng 1 icon trên các thẻ |
 | NFR-MNT-01 | Không thêm thư viện ngoài khi stdlib đáp ứng được; mọi thay đổi ghi vào `NHAT-KY-PHAT-TRIEN.md` và `THAY-DOI.md`; cuối mỗi giai đoạn hoàn thiện lại tài liệu thiết kế/SRS cho khớp |
-| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215) |
+| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215) |
 
 ---
 
@@ -270,7 +270,7 @@ Quy tắc bổ sung:
 
 ---
 
-## 6. Giao diện bên ngoài — API (GĐ1 ✅)
+## 6. Giao diện bên ngoài — API (GĐ1 ✅, bổ sung GĐ2 ✅)
 
 | Method & path | Quyền | Mô tả |
 |---|---|---|
@@ -284,6 +284,14 @@ Quy tắc bổ sung:
 | `GET /api/stats/summary?period=today\|week\|month\|all` | Người duyệt | Thống kê tổng hợp |
 | `GET /api/users` | Admin/Phó Admin | Danh sách tài khoản (không có password_hash) |
 | `POST /api/users` | Theo `can_grant` | Tạo tài khoản web mới kèm vai trò |
+| `POST /api/uploads` · `POST /api/tasks` (multipart) · `POST /api/tasks/<code>/files` | Đã cấp quyền | Tải tư liệu (≤200MB/tệp) kèm tạo việc hoặc gắn thêm vào việc | ✅ GĐ2 |
+| `GET /api/files/<code>/<filename>` · `GET /api/outputs/<id>/draft-video` | Xem được việc | Xem/tải tư liệu và phát video nháp (hỗ trợ Range) | ✅ GĐ2 |
+| `POST /api/outputs/<id>/<action>` | Theo ma trận bot | submit / approve / reject / revise / cancel / publish / publish-abort / schedule / schedule-abort / unschedule / retract — khớp audit và trạng thái của bot | ✅ GĐ2 |
+| `GET /api/review-queue` · `GET /api/scheduled` | Người duyệt | Hàng thẻ chờ duyệt; bài đang đặt lịch theo giờ tăng dần | ✅ GĐ2 |
+| `GET /api/stats/export?format=csv\|xlsx&period=...` | Người duyệt | Xuất thống kê (CSV có BOM UTF-8) | ✅ GĐ2 |
+| `GET /api/notifications` · `POST /api/notifications/read` | Đã đăng nhập | Hộp thông báo + đánh dấu đã đọc | ✅ GĐ2 |
+| `POST /api/auth/change-password` | Đã đăng nhập | Đổi mật khẩu (hủy các phiên khác) | ✅ GĐ2 |
+| `PATCH /api/users/<id>/role` · `POST /api/users/<id>/revoke` | Theo `can_grant`/`can_revoke` | Đổi vai trò / thu hồi quyền, ghi audit | ✅ GĐ2 |
 
 Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md`).
 
@@ -294,10 +302,10 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
 | GĐ1 | API + đăng nhập riêng + di trú dữ liệu | ✅ Xong 24/10/2026 (19/19 test webapp, 215/215 test bot) |
-| GĐ2 | Giao diện các luồng chính: đăng nhập, tổng quan, giao việc 3 bước, danh sách/chi tiết việc + thẻ kênh, chờ duyệt, lịch đăng, thống kê | 📋 |
-| GĐ3 | Thông báo đẩy + quản lý người dùng trên giao diện + tổng kết ngày trong Web App | 📋 |
-| GĐ4 | Triển khai production (dịch vụ chạy nền, tên miền, HTTPS) → chạy song song với bot → đội chuyển hẳn sang Web App → tắt dần bot | 📋 |
-| Ngoài lộ trình | Tạo tài khoản Admin Web App đầu tiên (chờ chủ dự án cấp email/SĐT + mật khẩu qua kênh bảo mật); đóng gói native (Capacitor) khi thật sự cần | 📋 |
+| GĐ2 | Giao diện các luồng chính: đăng nhập, tổng quan, giao việc 3 bước, danh sách/chi tiết việc + thẻ kênh, chờ duyệt, lịch đăng, thống kê; cài dịch vụ chạy nền (cổng 8790) và tạo tài khoản Admin đầu tiên | ✅ Xong 24/10/2026 (37/37 test webapp, 215/215 test bot; commit c9ec262) |
+| GĐ3 | Thông báo đẩy Web Push + tổng kết ngày trong Web App (quản lý người dùng trên giao diện đã xong ở GĐ2) | 📋 |
+| GĐ4 | Tên miền + HTTPS → chạy song song với bot → đội chuyển hẳn sang Web App → tắt dần bot (dịch vụ chạy nền đã cài từ GĐ2) | 📋 |
+| Ngoài lộ trình | Đóng gói native (Capacitor) khi thật sự cần | 📋 |
 
 ---
 
@@ -306,3 +314,4 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | Phiên bản | Ngày | Nội dung |
 |---|---|---|
 | 1.0 | 24/10/2026 | Bản gốc: tổng hợp từ bản thiết kế Web App đã được duyệt (24/10/2026), toàn bộ quy tắc nghiệp vụ đã chốt của hệ thống bot (GĐ1–GĐ2 bot) và GĐ1 Web App đã xây. Từ bản sau, thay đổi đi qua `THAY-DOI.md` rồi tổng hợp vào đây |
+| 1.1 | 24/10/2026 | Tổng hợp TD-0006 (GĐ2): giao diện PWA 9 màn hình, upload tư liệu 200MB/tệp, API thao tác thẻ kênh khớp bot, hàng chờ duyệt/lịch đăng, xuất thống kê, hộp thông báo trong app, đổi mật khẩu, quản lý vai trò trên giao diện; cài dịch vụ chạy nền và tạo tài khoản Admin đầu tiên. Việc còn lại: Web Push (GĐ3), tên miền/HTTPS (GĐ4) |

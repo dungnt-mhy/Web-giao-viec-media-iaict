@@ -99,12 +99,10 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - Ảnh hưởng: SRS mục 3 (toàn bộ FR của GĐ2), 2.4 (chạy song song —
   nay đã có service thật), 7 (lộ trình: mục "cài systemd service" của
   GĐ4 đã làm trước một phần; tên miền/HTTPS vẫn ở GĐ4).
-- Trạng thái SRS: ⏳ Chờ cập nhật — **GĐ2 là giai đoạn đang đóng**;
-  đề xuất tổng hợp TD-0006 vào **SRS 1.1** ở bước sau (chưa tự sửa
-  SRS.md trong đợt này).
+- Trạng thái SRS: ✅ Đã vào SRS 1.1 (tổng hợp ngày 24/10/2026 khi đóng GĐ2).
 
 ---
 
 ## Mục chờ cập nhật vào SRS
 
-- **TD-0006** (mục trên) — chờ tổng hợp vào SRS 1.1 khi đóng GĐ2.
+- **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
