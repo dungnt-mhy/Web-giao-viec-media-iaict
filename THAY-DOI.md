@@ -292,7 +292,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   ngay.
 - Ảnh hưởng: chỉ thẩm mỹ/bố cục. Kiểm thử: webapp 53/53 (cập nhật
   test version + assertion CSS mới), bot 215/215.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -355,7 +355,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   schema outputs + bảng facebook_pages mới; kiểm thử: webapp 53/53
   + test mới, bot 215/215 + test mới. Sao lưu trước khi sửa tại
   data/backup-fbmulti-20261024-143152/ (bản sao webapp + bot.db).
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -401,7 +401,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   nhãn một dòng, badge tròn, dark mode theo hệ thống.
 - Ảnh hưởng: chỉ thẩm mỹ/bố cục. Kiểm thử: webapp 54/54 + test mới,
   bot 230/230.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -466,7 +466,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   test); probe trên bản sao DB thật đạt (link legacy CV-0013,
   khóa đúng, hàng web botctl, hủy dọn request; sha DB thật không
   đổi); health local + public 0.5.2, đủ 5 service active.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -486,7 +486,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - Ảnh hưởng: chỉ giao diện. Bản 0.5.2 → 0.5.3 (VERSION, APP_VERSION,
   ?v=0.5.3, SW cache v11). Kiểm thử: webapp + bot phải xanh, thêm
   test tĩnh cho nút đóng modal.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -518,7 +518,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   cơ chế thông báo Telegram, định dạng hàng inbox, phân quyền, luồng
   đăng/thu hồi, logic target Facebook. Bản 0.5.3 → 0.5.4 (VERSION,
   APP_VERSION, ?v=0.5.4, SW cache v12).
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -563,7 +563,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   xanh; test mới: fbTargets không cache lỗi/rỗng, modal lỗi + thử
   lại, poll/visibility refresh, SW postMessage, /api/push/test trả
   sent/total không lộ endpoint.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026
 
 ---
 
@@ -575,3 +575,10 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - **TD-0008** — ✅ Đã tổng hợp vào **SRS 1.2** ngày 24/10/2026 (đóng GĐ3).
 - **TD-0009** — ✅ Đã tổng hợp vào **SRS 1.3** ngày 24/10/2026 (sửa giao diện mobile: thông báo đẩy/cache SW v4, bỏ trùng menu, lọc việc theo trạng thái, gọn block chọn file; bản 0.3.1).
 - **TD-0011** — ✅ Đã tổng hợp vào **SRS 1.3** ngày 24/10/2026 (áp giao diện mới đã chốt: nav mobile 6 cột + nút Giao việc Mẫu 1, collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống; bản 0.4.0).
+- **TD-0012** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (sửa thanh điều hướng mobile: nút Giao việc 58px nhô ~7px, nút thanh dưới khi active nền trong suốt; bản 0.4.1).
+- **TD-0013** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (đăng Facebook nhiều nơi cùng lúc, sẵn sàng nhiều Fanpage; bản 0.5.0).
+- **TD-0014** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (dải chip lọc nổi bật, danh sách gập/mở được, danh sách cuộn đúng, sửa thông báo tràn link dài; bản 0.5.1).
+- **TD-0015** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (khóa nơi đang chờ đăng, link Facebook kiểu cũ, thông báo web khi đăng/thu hồi qua botctl, badge PWA, icon xem thêm, tải thêm tư liệu muộn; bản 0.5.2).
+- **TD-0016** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (nút X đóng modal ở góc phải trên; bản 0.5.3).
+- **TD-0017** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (botctl đăng/thu hồi gửi kèm Web Push; bản 0.5.4).
+- **TD-0018** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (modal nơi đăng không trống oan, đồng bộ sống, badge/push app Brave đã ghim; bản 0.5.5).

@@ -712,3 +712,37 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
 - Máy chủ lại bị thay giữa đợt (mất unit webapp + tunnel, public
   1033) — đã khôi phục bằng restore-services.sh, đủ 5 service
   active, public 0.5.5.
+
+## 2026-10-25 — Gộp SRS 1.4 (TD-0012 → TD-0018) ✅
+- Theo yêu cầu của chủ dự án ("Gộp SRS luôn", 01:13 ngày 25/10).
+  Đợt gộp tài liệu — KHÔNG đổi code, KHÔNG đổi phiên bản app (giữ
+  0.5.5), KHÔNG restart service. Sao lưu SRS.md + THAY-DOI.md
+  trước khi sửa tại data/backup-srs14-20261024-181507/.
+- SRS 1.3 → 1.4 (ngày hiệu lực 25/10/2026): gộp TD-0012 (nav 58px,
+  nhô ~7px, sửa nền active), TD-0013 (đăng Facebook nhiều nơi:
+  khóa profile/page_<id>, bảng facebook_pages, 6 cột outputs),
+  TD-0014 (chip nổi bật, collapse danh sách, quy tắc cuộn,
+  tràn link), TD-0015 (khóa nơi chờ + chặn 409, link kiểu cũ từ
+  audit, hàng web botctl, badge PWA, icon •••, tư liệu muộn),
+  TD-0016 (nút X đóng modal), TD-0017 (botctl gửi kèm Web Push),
+  TD-0018 (modal không trống oan, đồng bộ sống, giới hạn badge
+  Chromium Android/Brave đã xác minh theo MDN).
+- Các mục SRS đã cập nhật: 2.3 (tập hợp nơi đăng Facebook), 2.4 +
+  2.6 + lộ trình GĐ4 (chuyển đội/tắt bot TẠM DỪNG theo quyết định
+  chủ dự án 24/10/2026; Mini App tạm dừng, chưa đánh số TD),
+  FR-TASK-03 (tư liệu muộn), FR-PUB-04/05/06 + FR-PUB-08 mới
+  (khóa nơi chờ), FR-SCH-01/02 (lịch lưu cả tập hợp nơi),
+  FR-NOTI-01/03 + FR-NOTI-04 mới (đồng bộ sống), mục 5 (schema
+  facebook_pages + 6 cột), mục 6 (GET /api/facebook-targets,
+  targets[] + 409, push test sent/total), NFR-USE-01, NFR-MNT-02
+  (số test từng đợt), lịch sử phiên bản 1.4.
+- THAY-DOI.md: 7 mục TD-0012→0018 đổi trạng thái sang ✅ đã gộp
+  vào SRS 1.4; mục "Mục chờ cập nhật vào SRS" bổ sung 7 dòng
+  tương ứng. Các mục chờ khác giữ nguyên.
+- Lưu ý: khía cạnh chỉ thuộc bot (picker bot TD-0013, botctl
+  TD-0015/TD-0017) được ghi trong SRS Web App ở mức hành vi dùng
+  chung; tài liệu thiết kế riêng của bot
+  (docs/ban-thiet-ke-bot-chuyen-nghiep.html) KHÔNG sửa trong đợt
+  này — để cho đợt gộp tài liệu bot riêng nếu cần.
+- Kiểm thử sau gộp (chỉ sửa tài liệu, không đụng code): webapp 58/58;
+  app giữ 0.5.5, không restart service.
