@@ -470,6 +470,26 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0016 — Nút X đóng modal ở góc phải trên (bản 0.5.3)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (phản hồi qua ảnh chụp
+  modal "Chọn nơi đăng Facebook": modal chỉ có "Hủy đăng" (hủy luôn
+  lệnh đăng) và nút Đăng bị khóa khi 0 nơi — không có cách thoát
+  trung lập).
+- Nội dung thay đổi (CHỈ giao diện): khung modal dùng chung
+  (openModal) thêm nút X góc phải trên, hiện trên MỌI modal (Đăng,
+  Đặt lịch, xác nhận, nhập lý do, đổi mật khẩu...). Bấm X chỉ ĐÓNG
+  modal, không có tác dụng phụ — tuyệt đối không gọi publish-abort,
+  không xác nhận gì cả; với modal kiểu xác nhận thì X tương đương
+  từ chối (giống bấm ra nền modal). Vùng chạm tối thiểu 40px, hiển
+  thị rõ cả sáng lẫn tối, không đè tiêu đề (tiêu đề modal chừa đệm
+  phải).
+- Ảnh hưởng: chỉ giao diện. Bản 0.5.2 → 0.5.3 (VERSION, APP_VERSION,
+  ?v=0.5.3, SW cache v11). Kiểm thử: webapp + bot phải xanh, thêm
+  test tĩnh cho nút đóng modal.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

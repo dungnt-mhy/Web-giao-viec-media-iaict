@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.2";
+const APP_VERSION = "0.5.3";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -395,7 +395,11 @@ window.addEventListener("resize", updateChipsFade);
 /* ============================= modals ============================= */
 
 function openModal(html) {
-  $("#modalRoot").innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
+  // TD-0016: nút X góc phải trên cho MỌI modal — chỉ đóng lại, không
+  // có tác dụng phụ (không gọi publish-abort, không xác nhận gì cả;
+  // giống bấm ra nền modal, kể cả với modal kiểu xác nhận).
+  $("#modalRoot").innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true"><button class="modal-x" data-modal-x aria-label="Đóng">✕</button>${html}</div></div>`;
+  $("[data-modal-x]").addEventListener("click", closeModal);
   $(".modal-backdrop").addEventListener("click", (event) => {
     if (event.target.classList.contains("modal-backdrop")) closeModal();
   });

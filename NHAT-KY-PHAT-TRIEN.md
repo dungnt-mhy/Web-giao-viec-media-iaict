@@ -632,3 +632,15 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   mở), botctl ghi đủ hàng web kèm link, hủy dọn request; sha DB
   thật không đổi. Health local + public 0.5.2, login 200, đủ 5
   service active.
+
+## TD-0016 — Nút X đóng modal (bản 0.5.3, 24/10/2026)
+- Người dùng phản hồi qua ảnh chụp modal "Chọn nơi đăng Facebook":
+  modal chỉ có "Hủy đăng" (hủy luôn lệnh đăng) và nút Đăng bị khóa khi
+  0 nơi — không có cách thoát trung lập.
+- Sửa (chỉ giao diện): khung modal dùng chung (openModal) thêm nút X
+  góc phải trên, hiện trên MỌI modal; bấm X chỉ đóng lại, không xác
+  nhận, không gọi publish-abort (giống bấm ra nền modal). Vùng chạm
+  40px, rõ cả sáng lẫn tối, tiêu đề chừa đệm phải để không bị đè.
+- Kiểm thử: webapp 58/58 (57 cũ + 1 mới cho nút đóng), bot 242/242;
+  health local + public 0.5.3, login public 200, đủ 5 service active,
+  asset public ?v=0.5.3 chứa dấu vết mới, SW cache v11.

@@ -602,17 +602,17 @@ class WebAppTestCase(unittest.TestCase):
         # badge PWA, icon xem thêm, chú thích tải muộn.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.2")
+        self.assertEqual(data["version"], "0.5.3")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.2", html)
+        self.assertIn("?v=0.5.3", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.2", js)
+        self.assertIn("0.5.3", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -668,9 +668,21 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn(".notification .row-main{overflow-wrap:anywhere}", css)
         self.assertIn(".notification .muted{overflow-wrap:anywhere}", css)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v10", raw)
-        self.assertIn(b"app.js?v=0.5.2", raw)
+        self.assertIn(b"giao-viec-iaict-v11", raw)
+        self.assertIn(b"app.js?v=0.5.3", raw)
         self.assertIn(b"setAppBadge", raw)
+
+    def test_modal_close_button_present(self):
+        # TD-0016: mọi modal đều có nút X góc phải trên, chỉ đóng lại
+        # (không xác nhận, không gọi publish-abort).
+        admin = self.login("admin")
+        status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
+        js = raw.decode("utf-8")
+        self.assertIn("data-modal-x", js)
+        self.assertIn('aria-label="Đóng"', js)
+        status, raw, _ = self.req_bytes("GET", "/styles.css", token=admin)
+        css = raw.decode("utf-8")
+        self.assertIn(".modal-x{position:absolute", css)
 
     # ------------------------------------------------ TD-0015: lock
     # pending places, legacy links, late uploads
