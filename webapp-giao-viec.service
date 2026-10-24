@@ -1,0 +1,20 @@
+[Unit]
+Description=Web App Giao Viec IAICT (PWA + API, shares the bot database)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Outbound traffic on this VM goes through the runtime egress proxy.
+# The proxy values live only in the root-only EnvironmentFile below
+# (mode 600, never in the workspace) — same pattern as the bot service.
+EnvironmentFile=-/etc/default/webapp-giao-viec
+WorkingDirectory=/home/hatch/workspace/webapp-giao-viec
+ExecStart=/usr/bin/python3 -m webapp.app
+Environment=WEBAPP_HOST=0.0.0.0
+Environment=WEBAPP_PORT=8790
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

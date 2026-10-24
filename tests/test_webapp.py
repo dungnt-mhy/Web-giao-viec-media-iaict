@@ -109,7 +109,8 @@ class WebAppTestCase(unittest.TestCase):
         cls.store.sync_outputs_for_task(known)
         cls.known_code = known["code"]
 
-        cls.app = App(cls.db_path)
+        cls.files_dir = Path(cls.tmp) / "files"
+        cls.app = App(cls.db_path, files_dir=cls.files_dir)
         cls.server = make_server("127.0.0.1", 0, cls.app)
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever,
@@ -150,6 +151,69 @@ class WebAppTestCase(unittest.TestCase):
         self.assertEqual(status, 200, data)
         return data["token"]
 
+    def req_bytes(self, method, path, body=None, token=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        all_headers = dict(headers or {})
+        if token:
+            all_headers["Authorization"] = f"Bearer {token}"
+        conn.request(method, path, body=body, headers=all_headers)
+        response = conn.getresponse()
+        raw = response.read()
+        result_headers = dict(response.getheaders())
+        conn.close()
+        return response.status, raw, result_headers
+
+    @staticmethod
+    def multipart(fields, files):
+        """fields: [(name, value)]; files: [(field, filename, bytes)]."""
+        import uuid
+
+        boundary = "----webapp-test-" + uuid.uuid4().hex
+        chunks = []
+        for name, value in fields:
+            chunks.append(f"--{boundary}\r\n".encode())
+            chunks.append(
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                .encode())
+            chunks.append(str(value).encode("utf-8") + b"\r\n")
+        for field, filename, content in files:
+            chunks.append(f"--{boundary}\r\n".encode())
+            chunks.append(
+                (f'Content-Disposition: form-data; name="{field}"; '
+                 f'filename="{filename}"\r\n').encode())
+            chunks.append(b"Content-Type: application/octet-stream\r\n\r\n")
+            chunks.append(content + b"\r\n")
+        chunks.append(f"--{boundary}--\r\n".encode())
+        return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+    def make_output(self, creator_key="writer", channel="website",
+                    draft=True, status=None, hint="Việc kiểm thử GĐ2"):
+        creator_id = self.user_ids[creator_key]
+        role = ROLE_OF[creator_key]
+        task = self.store.create_task(
+            creator_id, role, hint, [], [channel])
+        self.store.sync_outputs_for_task(task)
+        output = self.store.get_output_by_channel(task["code"], channel)
+        if draft:
+            if channel.startswith("video"):
+                self.store.set_output_draft(
+                    output["id"], f"https://example.test/{task['code']}.mp4")
+            else:
+                self.store.set_output_draft(
+                    output["id"], f"https://telegra.ph/{task['code']}")
+        if status:
+            self.store.set_output_status(output["id"], status)
+        return self.store.get_task(task["code"]), \
+            self.store.get_output(output["id"])
+
+    def audits_for(self, action, output_id):
+        return [e for e in self.store.audit_entries(action)
+                if e["target_id"] == str(output_id)]
+
+    def action(self, token, output_id, name, body=None):
+        return self.req("POST", f"/api/outputs/{output_id}/{name}",
+                        body=body or {}, token=token)
+
     # ------------------------------------------------------------ tests
     def test_health(self):
         status, data, _ = self.req("GET", "/api/health")
@@ -157,15 +221,17 @@ class WebAppTestCase(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertIn("version", data)
 
-    def test_index_page_is_served_and_marked_temporary(self):
+    def test_index_page_is_served(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.request("GET", "/")
         response = conn.getresponse()
         html = response.read().decode("utf-8")
         conn.close()
         self.assertEqual(response.status, 200)
-        self.assertIn("kiểm chứng", html)
-        self.assertIn("/api/auth/login", html)
+        self.assertIn("Giao Việc IAICT", html)
+        self.assertIn("/app.js", html)
+        self.assertIn("/manifest.webmanifest", html)
+        self.assertNotIn("Trang kiểm chứng", html)
 
     def test_migration_idempotent_and_preserves_data(self):
         users, tasks, _seq, columns = _raw_counts(self.db_path)
@@ -402,6 +468,440 @@ class WebAppTestCase(unittest.TestCase):
             row = self.store.get_user(user_id)
             self.assertIsNotNone(row)
             self.assertEqual(row["role"], ROLE_OF[key])
+
+    # ------------------------------------------------ GĐ2: static / PWA
+    def test_pwa_assets_are_served(self):
+        admin = self.login("admin")
+        status, raw, headers = self.req_bytes("GET", "/app.js", token=admin)
+        self.assertEqual(status, 200)
+        self.assertIn(b"serviceWorker", raw)
+        self.assertIn(b"/api/review-queue", raw)
+        status, raw, _ = self.req_bytes("GET", "/manifest.webmanifest")
+        self.assertEqual(status, 200)
+        manifest = json.loads(raw.decode("utf-8"))
+        self.assertEqual(manifest["name"], "Giao Việc IAICT")
+        self.assertEqual(manifest["display"], "standalone")
+        status, raw, _ = self.req_bytes("GET", "/sw.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"giao-viec-iaict", raw)
+        status, raw, headers = self.req_bytes("GET", "/icon-192.png")
+        self.assertEqual(status, 200)
+        self.assertTrue(raw.startswith(b"\x89PNG"))
+
+    # ------------------------------------------------ GĐ2: uploads/files
+    def test_upload_create_task_files_download_and_range(self):
+        admin = self.login("admin")
+        png = b"\x89PNG\r\n\x1a\n" + b"webapp-image-bytes" * 8
+        body, content_type = self.multipart(
+            [("hint", "Việc upload từ Web App"),
+             ("destinations", "website"), ("destinations", "facebook")],
+            [("files", "anh-mau.png", png)])
+        status, raw, _ = self.req_bytes(
+            "POST", "/api/tasks", body=body, token=admin,
+            headers={"Content-Type": content_type})
+        self.assertEqual(status, 201, raw)
+        data = json.loads(raw.decode("utf-8"))
+        code = data["task"]["code"]
+        self.assertEqual(data["task"]["file_ids"], ["anh-mau.png"])
+        saved = self.files_dir / code / "anh-mau.png"
+        self.assertTrue(saved.exists())
+        self.assertEqual(saved.read_bytes(), png)
+        self.assertTrue(self.audits_for("create_task", code) or
+                        [e for e in self.store.audit_entries("create_task")
+                         if e["target_id"] == code])
+        self.assertTrue(
+            [e for e in self.store.audit_entries("destinations_confirmed")
+             if e["target_id"] == code])
+
+        status, detail, _ = self.req("GET", f"/api/tasks/{code}",
+                                     token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual([f["name"] for f in detail["files"]],
+                         ["anh-mau.png"])
+        status, raw, headers = self.req_bytes(
+            "GET", f"/api/files/{code}/anh-mau.png", token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(raw, png)
+        status, raw, headers = self.req_bytes(
+            "GET", f"/api/files/{code}/anh-mau.png", token=admin,
+            headers={"Range": "bytes=0-7"})
+        self.assertEqual(status, 206)
+        self.assertEqual(raw, png[:8])
+        self.assertEqual(headers.get("Content-Range"),
+                         f"bytes 0-7/{len(png)}")
+
+        # /api/uploads appends a second material file to the same task.
+        body, content_type = self.multipart(
+            [("task_code", code)],
+            [("files", "ghi-chu.txt", b"noi dung ghi chu")])
+        status, raw, _ = self.req_bytes(
+            "POST", "/api/uploads", body=body, token=admin,
+            headers={"Content-Type": content_type})
+        self.assertEqual(status, 201, raw)
+        self.assertTrue((self.files_dir / code / "ghi-chu.txt").exists())
+        # A non-creator, non-admin may not add materials.
+        writer = self.login("writer")
+        body, content_type = self.multipart(
+            [("task_code", code)], [("files", "x.txt", b"x")])
+        status, _raw, _ = self.req_bytes(
+            "POST", "/api/uploads", body=body, token=writer,
+            headers={"Content-Type": content_type})
+        self.assertEqual(status, 403)
+
+    def test_upload_rejects_file_over_limit(self):
+        # Exercise the validator directly with a fake part descriptor:
+        # building a real 200MB body in the suite would be wasteful.
+        from webapp.app import Handler
+
+        class FakeHandler(Handler):
+            def __init__(self):  # no socket setup needed
+                pass
+
+        handler = FakeHandler()
+        with self.assertRaises(Exception) as ctx:
+            handler._validate_parts(
+                [{"filename": "to.mp4", "size": 201 * 1024 * 1024}])
+        self.assertEqual(ctx.exception.status, 413)
+
+    # ---------------------------------------------- GĐ2: output actions
+    def test_submit_approve_and_permission_audits(self):
+        writer = self.login("writer")
+        editor = self.login("editor")
+        _task, output = self.make_output("writer", "website")
+        status, data, _ = self.action(writer, output["id"], "submit")
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(output["id"])["status"],
+                         "PENDING")
+        self.assertTrue(self.audits_for("submit_output", output["id"]))
+        # Writer may not approve — and the denial itself is audited.
+        status, _d, _ = self.action(writer, output["id"], "approve")
+        self.assertEqual(status, 403)
+        self.assertTrue(self.audits_for(
+            "denied_output_approve_attempt", output["id"]))
+        status, data, _ = self.action(editor, output["id"], "approve")
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(output["id"])["status"],
+                         "APPROVED_WAITING")
+        self.assertTrue(self.audits_for("approve_output", output["id"]))
+
+    def test_submit_without_draft_is_conflict(self):
+        writer = self.login("writer")
+        _task, output = self.make_output("writer", "website", draft=False)
+        status, _d, _ = self.action(writer, output["id"], "submit")
+        self.assertEqual(status, 409)
+
+    def test_reject_requires_reason_and_revise_by_creator(self):
+        writer = self.login("writer")
+        editor = self.login("editor")
+        _task, output = self.make_output(
+            "writer", "facebook", status="PENDING")
+        status, _d, _ = self.action(editor, output["id"], "reject", {})
+        self.assertEqual(status, 400)
+        status, data, _ = self.action(
+            editor, output["id"], "reject", {"reason": "Thiếu ảnh bìa"})
+        self.assertEqual(status, 200, data)
+        updated = self.store.get_output(output["id"])
+        self.assertEqual(updated["status"], "REJECTED")
+        self.assertEqual(updated["reject_reason"], "Thiếu ảnh bìa")
+        self.assertTrue(self.audits_for("reject_output", output["id"]))
+        # Revise belongs to the creator; the editor is not the creator.
+        status, _d, _ = self.action(editor, output["id"], "revise",
+                                    {"reason": "Sửa lại"})
+        self.assertEqual(status, 403)
+        status, data, _ = self.action(
+            writer, output["id"], "revise", {"reason": "Đổi tiêu đề"})
+        self.assertEqual(status, 200, data)
+        self.assertTrue(self.audits_for("revise_output", output["id"]))
+
+    def test_cancel_output_reviewer_only(self):
+        writer = self.login("writer")
+        editor = self.login("editor")
+        _task, output = self.make_output("writer", "instagram")
+        status, _d, _ = self.action(writer, output["id"], "cancel")
+        self.assertEqual(status, 403)
+        self.assertTrue(self.audits_for(
+            "denied_output_cancel_attempt", output["id"]))
+        status, data, _ = self.action(editor, output["id"], "cancel")
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(output["id"])["status"],
+                         "CANCELLED")
+        self.assertTrue(self.audits_for("cancel_output", output["id"]))
+
+    def test_admin_own_publish_auto_approves_but_never_published(self):
+        admin = self.login("admin")
+        _task, output = self.make_output("admin", "website")
+        status, data, _ = self.action(admin, output["id"], "publish")
+        self.assertEqual(status, 200, data)
+        updated = self.store.get_output(output["id"])
+        # The Đăng button only records the order; Muse publishes for
+        # real later, so the status must NOT claim PUBLISHED here.
+        self.assertEqual(updated["status"], "APPROVED_WAITING")
+        self.assertEqual(updated["pending_choice"], 1)
+        auto = [e for e in self.audits_for("approve_output", output["id"])
+                if "auto=admin_own" in (e["detail"] or "")]
+        self.assertTrue(auto)
+        self.assertTrue(self.audits_for("publish_requested", output["id"]))
+
+    def test_publish_denied_for_writer_with_audit(self):
+        writer = self.login("writer")
+        _task, output = self.make_output(
+            "writer", "website", status="APPROVED_WAITING")
+        status, _d, _ = self.action(writer, output["id"], "publish")
+        self.assertEqual(status, 403)
+        self.assertTrue(self.audits_for(
+            "denied_output_publish_attempt", output["id"]))
+
+    def test_facebook_publish_requires_target_then_abort(self):
+        admin = self.login("admin")
+        _task, output = self.make_output("admin", "facebook")
+        status, data, _ = self.action(admin, output["id"], "publish", {})
+        self.assertEqual(status, 422, data)
+        self.assertEqual(data["code"], "target_required")
+        self.assertEqual(self.store.get_output(output["id"])
+                         ["pending_choice"], 1)
+        status, data, _ = self.action(admin, output["id"], "publish-abort")
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(output["id"])
+                         ["pending_choice"], 0)
+        self.assertTrue(self.audits_for("publish_aborted", output["id"]))
+        # Now publish for real (still only an order), target = page.
+        status, data, _ = self.action(
+            admin, output["id"], "publish", {"target": "page"})
+        self.assertEqual(status, 200, data)
+        entries = self.audits_for("publish_requested", output["id"])
+        self.assertTrue(any("target=page" in (e["detail"] or "")
+                            for e in entries))
+        status, _d, _ = self.action(
+            admin, output["id"], "publish", {"target": "khac"})
+        self.assertIn(status, (400, 409))
+
+    def test_schedule_unschedule_and_close_warning(self):
+        admin = self.login("admin")
+        from datetime import datetime, timedelta, timezone
+
+        def future(minutes):
+            return (datetime.now(timezone.utc)
+                    + timedelta(minutes=minutes)).isoformat(
+                        timespec="seconds")
+
+        _t1, first = self.make_output("admin", "website")
+        status, data, _ = self.action(
+            admin, first["id"], "schedule", {"scheduled_at": future(180)})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["warnings"], [])
+        self.assertIsNotNone(self.store.get_output(first["id"])
+                              ["scheduled_at"])
+        self.assertTrue(self.audits_for("schedule_set", first["id"]))
+        # Second post on the same channel 30 minutes later must warn.
+        _t2, second = self.make_output("admin", "website")
+        status, data, _ = self.action(
+            admin, second["id"], "schedule", {"scheduled_at": future(210)})
+        self.assertEqual(status, 200, data)
+        self.assertTrue(data["warnings"])
+        # Facebook scheduling needs its target first.
+        _t3, fb = self.make_output("admin", "facebook")
+        status, data, _ = self.action(
+            admin, fb["id"], "schedule", {"preset": "60"})
+        self.assertEqual(status, 422, data)
+        self.assertEqual(data["code"], "target_required")
+        status, data, _ = self.action(
+            admin, fb["id"], "schedule",
+            {"preset": "60", "target": "profile"})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(fb["id"])["publish_target"],
+                         "profile")
+        # Scheduled list (reviewer-only) contains the posts.
+        status, data, _ = self.req("GET", "/api/scheduled", token=admin)
+        self.assertEqual(status, 200)
+        ids = [item["id"] for item in data["items"]]
+        self.assertIn(first["id"], ids)
+        self.assertIn(fb["id"], ids)
+        writer = self.login("writer")
+        status, _d, _ = self.req("GET", "/api/scheduled", token=writer)
+        self.assertEqual(status, 403)
+        # Unschedule clears the slot and audits schedule_cancelled.
+        status, data, _ = self.action(admin, first["id"], "unschedule")
+        self.assertEqual(status, 200, data)
+        self.assertIsNone(self.store.get_output(first["id"])
+                          ["scheduled_at"])
+        self.assertTrue(self.audits_for("schedule_cancelled", first["id"]))
+
+    def test_review_queue_reviewer_only(self):
+        writer = self.login("writer")
+        editor = self.login("editor")
+        _task, output = self.make_output(
+            "writer", "website", status="PENDING")
+        status, _d, _ = self.req("GET", "/api/review-queue", token=writer)
+        self.assertEqual(status, 403)
+        status, data, _ = self.req("GET", "/api/review-queue", token=editor)
+        self.assertEqual(status, 200)
+        self.assertIn(output["id"], [i["id"] for i in data["items"]])
+
+    def test_retract_nonfacebook_and_facebook_request_only(self):
+        admin = self.login("admin")
+        _task, web = self.make_output("admin", "website", draft=True)
+        self.store.set_output_public_url(
+            web["id"], "https://example.test/bai-web")
+        status, data, _ = self.action(admin, web["id"], "retract")
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.store.get_output(web["id"])["status"],
+                         "RETRACTED")
+        self.assertTrue(self.audits_for("retract_output", web["id"]))
+
+        _task, fb = self.make_output("admin", "facebook", draft=True)
+        self.store.set_output_public_url(
+            fb["id"], "https://facebook.test/bai-fb")
+        status, data, _ = self.action(admin, fb["id"], "retract")
+        self.assertEqual(status, 200, data)
+        # Facebook retract is only an order here — Muse deletes the
+        # real post; the status must stay PUBLISHED until then.
+        self.assertEqual(self.store.get_output(fb["id"])["status"],
+                         "PUBLISHED")
+        self.assertTrue(self.audits_for("retract_requested", fb["id"]))
+        status, _d, _ = self.action(admin, fb["id"], "retract")
+        self.assertEqual(status, 409)
+
+    # ------------------------------------------- GĐ2: stats / inbox
+    def test_stats_export_csv_bom_and_xlsx(self):
+        admin = self.login("admin")
+        status, raw, headers = self.req_bytes(
+            "GET", "/api/stats/export?format=csv&period=all", token=admin)
+        self.assertEqual(status, 200)
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))  # UTF-8 BOM
+        self.assertIn("Mã việc", raw.decode("utf-8-sig"))
+        self.assertIn("attachment", headers.get("Content-Disposition", ""))
+        status, raw, headers = self.req_bytes(
+            "GET", "/api/stats/export?format=xlsx&period=all", token=admin)
+        self.assertEqual(status, 200)
+        self.assertTrue(raw.startswith(b"PK"))
+        writer = self.login("writer")
+        status, _raw, _ = self.req_bytes(
+            "GET", "/api/stats/export?format=csv", token=writer)
+        self.assertEqual(status, 403)
+        status, _d, _ = self.req(
+            "GET", "/api/stats/export?format=pdf", token=admin)
+        self.assertEqual(status, 400)
+
+    def test_notifications_flow_and_mark_read(self):
+        writer = self.login("writer")
+        editor = self.login("editor")
+        _task, pending = self.make_output(
+            "writer", "website", status="PENDING")
+        status, data, _ = self.req("GET", "/api/notifications",
+                                   token=editor)
+        self.assertEqual(status, 200)
+        review_items = [i for i in data["items"]
+                        if i["kind"] == "review_pending"
+                        and i["output_id"] == pending["id"]]
+        self.assertTrue(review_items)
+        key = review_items[0]["key"]
+        self.assertFalse(review_items[0]["read"])
+        status, data, _ = self.req(
+            "POST", "/api/notifications/read", token=editor,
+            body={"keys": [key]})
+        self.assertEqual(status, 200)
+        status, data, _ = self.req("GET", "/api/notifications",
+                                   token=editor)
+        again = [i for i in data["items"] if i["key"] == key]
+        self.assertTrue(again and again[0]["read"])
+        # The creator is notified about a rejection of their output.
+        _task, rejected = self.make_output(
+            "writer", "instagram", status="PENDING")
+        status, _d, _ = self.action(
+            editor, rejected["id"], "reject", {"reason": "Cần sửa ảnh"})
+        self.assertEqual(status, 200)
+        status, data, _ = self.req("GET", "/api/notifications",
+                                   token=writer)
+        kinds = {(i["output_id"], i["kind"]) for i in data["items"]}
+        self.assertIn((rejected["id"], "rejected"), kinds)
+
+    # -------------------------------------- GĐ2: password / user admin
+    def test_change_password_flow(self):
+        user_id = self.webdb.create_web_user(
+            display_name="Đổi Mật Khẩu", email="doimk@test.vn",
+            phone=None, password_hash=hash_password("mat-khau-cu-1"))
+        self.store.set_role(user_id, roles.ROLE_WRITER)
+        status, data, _ = self.req(
+            "POST", "/api/auth/login",
+            {"login": "doimk@test.vn", "password": "mat-khau-cu-1"})
+        self.assertEqual(status, 200, data)
+        token1 = data["token"]
+        status, data, _ = self.req(
+            "POST", "/api/auth/login",
+            {"login": "doimk@test.vn", "password": "mat-khau-cu-1"})
+        token2 = data["token"]
+        status, _d, _ = self.req(
+            "POST", "/api/auth/change-password", token=token1,
+            body={"old_password": "sai-mat-khau",
+                  "new_password": "mat-khau-moi-1"})
+        self.assertEqual(status, 401)
+        status, data, _ = self.req(
+            "POST", "/api/auth/change-password", token=token1,
+            body={"old_password": "mat-khau-cu-1",
+                  "new_password": "mat-khau-moi-1"})
+        self.assertEqual(status, 200, data)
+        # Current session survives; the other session is invalidated.
+        status, _d, _ = self.req("GET", "/api/auth/me", token=token1)
+        self.assertEqual(status, 200)
+        status, _d, _ = self.req("GET", "/api/auth/me", token=token2)
+        self.assertEqual(status, 401)
+        # Old password no longer works, the new one does.
+        status, _d, _ = self.req(
+            "POST", "/api/auth/login",
+            {"login": "doimk@test.vn", "password": "mat-khau-cu-1"})
+        self.assertEqual(status, 401)
+        status, data, _ = self.req(
+            "POST", "/api/auth/login",
+            {"login": "doimk@test.vn", "password": "mat-khau-moi-1"})
+        self.assertEqual(status, 200, data)
+
+    def test_user_role_patch_and_revoke(self):
+        admin = self.login("admin")
+        status, data, _ = self.req(
+            "POST", "/api/users", token=admin,
+            body={"name": "Người Bị Đổi Vai", "email": "doivai@test.vn",
+                  "password": "tam-thoi-123", "role": "contributor"})
+        self.assertEqual(status, 201, data)
+        target = data["user"]["id"]
+        status, data, _ = self.req(
+            "PATCH", f"/api/users/{target}/role", token=admin,
+            body={"role": "writer", "can_publish": False})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["user"]["role"], roles.ROLE_WRITER)
+        self.assertTrue([e for e in self.store.audit_entries("grant_role")
+                         if e["target_id"] == str(target)])
+        # Deputy may not grant a role above their grantable set.
+        deputy = self.login("deputy")
+        status, _d, _ = self.req(
+            "PATCH", f"/api/users/{target}/role", token=deputy,
+            body={"role": "editor"})
+        self.assertEqual(status, 403)
+        status, data, _ = self.req(
+            "POST", f"/api/users/{target}/revoke", token=admin, body={})
+        self.assertEqual(status, 200, data)
+        self.assertIsNone(data["user"]["role"])
+        self.assertTrue([e for e in self.store.audit_entries("revoke_role")
+                         if e["target_id"] == str(target)])
+
+    def test_draft_video_streaming_with_range(self):
+        admin = self.login("admin")
+        _task, output = self.make_output("admin", "video_vertical",
+                                         draft=False)
+        video_dir = self.files_dir / _task["code"] / "video-drafts"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        video_path = video_dir / "draft.mp4"
+        payload = b"\x00\x00\x00\x18ftypmp42" + b"video-bytes" * 16
+        video_path.write_bytes(payload)
+        self.store.set_output_video(output["id"], str(video_path))
+        status, raw, headers = self.req_bytes(
+            "GET", f"/api/outputs/{output['id']}/draft-video", token=admin,
+            headers={"Range": "bytes=0-11"})
+        self.assertEqual(status, 206)
+        self.assertEqual(raw, payload[:12])
+        status, raw, _ = self.req_bytes(
+            "GET", f"/api/outputs/{output['id']}/draft-video", token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(raw, payload)
 
     def test_admin_cli_creates_loginable_admin(self):
         env = dict(os.environ)

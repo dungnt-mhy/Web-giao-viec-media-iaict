@@ -80,9 +80,31 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - Ảnh hưởng: SRS mục đầu (Quy trình quản trị tài liệu), NFR-MNT-01.
 - Trạng thái SRS: ✅ Đã vào SRS 1.0
 
+### TD-0006 — GĐ2 + cài dịch vụ + tài khoản Admin đầu tiên trong một lượt
+- Ngày: 24/10/2026
+- Nguồn: Người dùng yêu cầu ("Làm luôn tất cả 1 lượt")
+- Nội dung thay đổi: Hoàn thành Giai đoạn 2 trong một đợt gồm cả phần
+  trước đây dự kiến để bước triển khai sau: (1) giao diện PWA đầy đủ 9
+  màn hình theo thiết kế đã chốt; (2) backend bổ sung — upload tư
+  liệu 200MB/file lưu đúng cấu trúc `data/files/<MÃ VIỆC>/` của bot
+  (hai điểm vào: kèm tạo việc và gắn thêm), đủ thao tác thẻ kênh khớp
+  ngữ nghĩa/audit của bot, review-queue, scheduled, xuất thống kê
+  CSV/Excel, hộp thông báo trong app, đổi mật khẩu, đổi vai trò/thu
+  hồi qua API; (3) cài systemd service `webapp-giao-viec` cổng 8790
+  (trước đây thuộc bước triển khai/GĐ4); (4) tạo tài khoản Admin Web
+  App đầu tiên gắn vào tài khoản Admin Telegram hiện có (email + SĐT
+  của chủ dự án, mật khẩu tạm bàn giao riêng, không ghi trong tài
+  liệu). Kiểm thử: webapp 37/37, bot 215/215; lái thử thật qua HTTP
+  tạo việc CV-0013 + ghi lệnh đăng đúng quy tắc.
+- Ảnh hưởng: SRS mục 3 (toàn bộ FR của GĐ2), 2.4 (chạy song song —
+  nay đã có service thật), 7 (lộ trình: mục "cài systemd service" của
+  GĐ4 đã làm trước một phần; tên miền/HTTPS vẫn ở GĐ4).
+- Trạng thái SRS: ⏳ Chờ cập nhật — **GĐ2 là giai đoạn đang đóng**;
+  đề xuất tổng hợp TD-0006 vào **SRS 1.1** ở bước sau (chưa tự sửa
+  SRS.md trong đợt này).
+
 ---
 
 ## Mục chờ cập nhật vào SRS
 
-*(Chưa có — các thay đổi phát sinh từ sau bản 1.0 sẽ nằm ở đây với trạng thái
-⏳ Chờ cập nhật, và được tổng hợp vào SRS ở cuối mỗi giai đoạn.)*
+- **TD-0006** (mục trên) — chờ tổng hợp vào SRS 1.1 khi đóng GĐ2.
