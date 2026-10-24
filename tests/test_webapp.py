@@ -484,6 +484,55 @@ class WebAppTestCase(unittest.TestCase):
                                   token=admin)
         self.assertEqual(status, 400)
 
+    def test_task_list_status_filter_and_counts(self):
+        # TD-0009: ?status= filters by the Store-derived task status;
+        # "counts" tallies every status over the set matched by the
+        # OTHER filters (here q=), before the status filter is applied.
+        admin = self.login("admin")
+        marker = "TD0009LOCTHEOTRANGTHAI"
+        codes = {}
+        for target in ("DRAFT", "PENDING", "APPROVED_WAITING",
+                       "PUBLISHED", "REJECTED", "RETRACTED"):
+            task, _output = self.make_output(
+                status=target, hint=f"{marker} {target}")
+            self.store.sync_task_status_from_outputs(task["code"])
+            codes[target] = task["code"]
+        task, _output = self.make_output(hint=f"{marker} CANCELLED")
+        self.store.set_task_status(task["code"], storage.STATUS_CANCELLED)
+        codes["CANCELLED"] = task["code"]
+
+        q = quote(marker)
+        status, data, _ = self.req("GET", f"/api/tasks?q={q}", token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], 7)
+        self.assertEqual(data["counts"], {
+            "DRAFT": 1, "PENDING": 1, "APPROVED_WAITING": 1,
+            "PUBLISHED": 1, "REJECTED": 1, "CANCELLED": 1,
+            "RETRACTED": 1,
+        })
+        by_code = {item["code"]: item["status"] for item in data["items"]}
+        for target, code in codes.items():
+            self.assertEqual(by_code[code], target)
+
+        for target, code in codes.items():
+            status, data, _ = self.req(
+                "GET", f"/api/tasks?q={q}&status={target}", token=admin)
+            self.assertEqual(status, 200)
+            self.assertEqual(data["total"], 1)
+            self.assertEqual([i["code"] for i in data["items"]], [code])
+            self.assertEqual(data["items"][0]["status"], target)
+            # Counts ignore the status filter itself.
+            self.assertEqual(data["counts"]["PUBLISHED"], 1)
+            self.assertEqual(sum(data["counts"].values()), 7)
+
+        # A filtered status with no match in scope: empty + zero count.
+        status, data, _ = self.req(
+            "GET", f"/api/tasks?q={q}-KHONG-CO&status=DRAFT", token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(data["items"], [])
+        self.assertEqual(data["total"], 0)
+        self.assertEqual(data["counts"]["DRAFT"], 0)
+
     def test_task_detail_and_404(self):
         admin = self.login("admin")
         status, data, _ = self.req("GET", f"/api/tasks/{self.known_code}",

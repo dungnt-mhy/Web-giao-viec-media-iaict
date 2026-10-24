@@ -463,10 +463,13 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.NOT_FOUND, "Chưa có file tĩnh này.")
         body = page.read_bytes()
         headers = {}
-        if filename == "index.html":
+        # TD-0009: the whole app shell must revalidate on every load —
+        # without an origin Cache-Control, Cloudflare's edge applied
+        # its default max-age=14400 to /app.js and kept serving the
+        # previous release's shell even after a new deploy.
+        if filename in ("index.html", "sw.js", "app.js", "styles.css"):
             headers["Cache-Control"] = "no-cache"
-        elif filename == "sw.js":
-            headers["Cache-Control"] = "no-cache"
+        if filename == "sw.js":
             headers["Service-Worker-Allowed"] = "/"
         self._send_bytes(HTTPStatus.OK, body, content_type, headers)
 
@@ -750,12 +753,34 @@ class Handler(BaseHTTPRequestHandler):
         if channel and channel not in storage.CHANNELS:
             raise ApiError(HTTPStatus.BAD_REQUEST,
                            f"Kênh không hợp lệ: {channel}")
-        rows, total = self.app.webdb.list_tasks(
-            status=status, channel=channel, creator_id=creator_id,
-            q=query.get("q") or None, limit=limit, offset=offset)
+        # TD-0009: filter + counts use the task status DERIVED by the
+        # bot Store (sync_task_status_from_outputs) — the same logic
+        # that maintains tasks.status — never a second derivation here.
+        # Counts cover the set of tasks visible under the *other*
+        # filters (q/channel/creator), before the status filter, so the
+        # frontend chips can show per-status totals.
+        rows, _total_all = self.app.webdb.list_tasks(
+            status=None, channel=channel, creator_id=creator_id,
+            q=query.get("q") or None, limit=1_000_000, offset=0)
+        counts = {code: 0 for code in storage.ALL_STATUSES}
+        visible = []
+        for row in rows:
+            fresh = self.app.store.sync_task_status_from_outputs(
+                row["code"])
+            derived = fresh["status"] if fresh is not None \
+                else row["status"]
+            counts[derived] = counts.get(derived, 0) + 1
+            if status is not None and derived != status:
+                continue
+            merged = dict(row)
+            merged["status"] = derived
+            visible.append(merged)
+        total = len(visible)
+        page = visible[offset:offset + limit]
         self._send_json(HTTPStatus.OK, {
-            "items": [task_public(r) for r in rows],
+            "items": [task_public(r) for r in page],
             "total": total, "limit": limit, "offset": offset,
+            "counts": counts,
         })
 
     def _task_detail(self, code: str) -> None:

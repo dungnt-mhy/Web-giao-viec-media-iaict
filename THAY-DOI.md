@@ -143,6 +143,58 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   GĐ3; kiểm thử webapp 51/51, bot 215/215; version app 0.3.0 đã chạy
   tại https://post.iaict-platform.com)
 
+### TD-0009 — Sửa giao diện mobile theo phản hồi dùng thật: thông báo đẩy không hiện, trùng menu, lọc việc theo trạng thái, gọn block chọn file
+- Ngày: 24/10/2026
+- Nguồn: Người dùng phản hồi trên mobile kèm ảnh chụp màn Thông báo (không
+  thấy mục bật thông báo đẩy), kèm chỉ đạo từ nay chỉ làm/kiểm chứng mobile
+  trừ khi người dùng báo đang ở desktop.
+- Nội dung thay đổi (chỉ mobile, desktop giữ nguyên; version app 0.3.0 → 0.3.1):
+  (1) **Khối "📲 Thông báo đẩy" không hiện trên máy người dùng**: bản app
+  shell GĐ3 đã có thẻ này trong mã, nhưng thiết bị còn chạy vỏ app cũ do
+  service worker đời trước giữ cache. Xử lý: đổi chiến lược cache của
+  `sw.js` — vỏ app (index.html/app.js/styles.css) luôn network-first, tĩnh
+  khác cache-first, tăng cache lên v4 (skipWaiting + clients.claim như cũ),
+  app tự gọi kiểm tra bản SW mới mỗi lần mở và tự tải lại một lần khi SW mới
+  tiếp quản; hiện số phiên bản app nhỏ trong giao diện để đối chiếu bằng
+  mắt; rà `initPushPanel` để thẻ LUÔN hiện kèm dòng trạng thái rõ ràng
+  trong mọi trường hợp (đang kiểm tra/không hỗ trợ/đã chặn/đang tắt/đang
+  bật/lỗi) thay vì ẩn hết nút khi lỗi sớm. Khi triển khai còn phát hiện
+  thêm tầng cache thứ hai: Cloudflare edge giữ bản `/app.js` cũ theo
+  TTL mặc định (origin không gửi Cache-Control) — đã xử lý bằng cách
+  origin gửi `Cache-Control: no-cache` cho toàn bộ vỏ app và
+  `index.html`/`sw.js` tham chiếu tài nguyên kèm phiên bản
+  (`?v=0.3.1`), vì token Cloudflare sẵn có không có quyền purge cache
+  (API trả 401).
+  (2) **Trùng menu mobile**: ẩn hẳn hàng chip điều hướng trượt ngang ngay
+  dưới header trên khung mobile; điều hướng chỉ còn thanh dưới đáy. Header
+  giữ nguyên.
+  (3) **Lọc việc theo trạng thái** ở màn Việc: backend `GET /api/tasks`
+  lọc `?status=` theo đúng trạng thái việc đã suy ra bằng logic của Store
+  (`sync_task_status_from_outputs`) và trả thêm `counts` từng trạng thái
+  trên cùng tập việc người dùng thấy (trước khi lọc theo trạng thái).
+  Frontend: hàng chip lọc trượt ngang (Tất cả • Nháp • Chờ duyệt • Đã
+  duyệt · chờ đăng • Đã đăng • Bị trả lại • Đã thu hồi • Đã hủy) kèm số
+  lượng từng trạng thái, giữ lựa chọn khi quay lại màn (state + URL hash),
+  danh sách rỗng hiện "Không có việc nào ở trạng thái này."
+  (4) **Gọn block chọn ảnh/video ở Bước 1 wizard** trên mobile: giảm mạnh
+  padding/chiều cao vùng chọn file, file đã chọn hiện lưới thumbnail nhỏ
+  gọn kèm tên/dung lượng + nút xóa, ghi chú giới hạn 200MB/tệp chữ nhỏ.
+- Ảnh hưởng: SRS mục 3.2 (FR-TASK — lọc theo trạng thái), 3.8 (FR-NOTI-01 —
+  hiển thị mục thông báo đẩy), 6 (API tasks thêm `counts`), giao diện
+  mobile các màn Việc/Giao việc/Thông báo. Kiểm thử: thêm test API lọc
+  `?status=` + counts vào bộ webapp; giữ nguyên toàn bộ test cũ hai bộ.
+- Trạng thái SRS: ⏳ Chờ tổng hợp (chưa vào SRS — để dành tổng hợp sau,
+  theo chỉ đạo đợt này).
+- **Bổ sung (đính chính người dùng, cùng ngày)**: bỏ cách hiểu "chỉ
+  mobile" — giao diện làm kỹ CẢ desktop lẫn mobile. Đã rà: desktop
+  vốn không có chip-nav trùng (sidebar đầy đủ như thiết kế); block
+  chọn file desktop siết nhẹ cho cân đối (`@media (min-width:821px)`:
+  padding .85rem/1rem, icon 1.55rem; đo 229→209px). Kiểm chứng hiển
+  thị bằng ảnh chụp thật ở CẢ hai khung 390px và 1440px cho 4 màn
+  chính (chi tiết trong NHAT-KY-PHAT-TRIEN.md). Giữa đợt máy chủ bị
+  thay làm mất unit/env — đã khôi phục đủ 5 service, health local +
+  public 0.3.1.
+
 ---
 
 ## Mục chờ cập nhật vào SRS
@@ -150,3 +202,4 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
 - **TD-0007** — ⏳ Chờ tổng hợp vào SRS khi đóng GĐ4 (phần tên miền/HTTPS đã xong 24/10/2026).
 - **TD-0008** — ✅ Đã tổng hợp vào **SRS 1.2** ngày 24/10/2026 (đóng GĐ3).
+- **TD-0009** — ⏳ Chờ tổng hợp (sửa giao diện mobile: thông báo đẩy/cache SW v4, bỏ trùng menu, lọc việc theo trạng thái, gọn block chọn file; 24/10/2026).

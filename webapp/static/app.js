@@ -32,11 +32,28 @@ const ROLE_OPTIONS = [
   ["contributor", "Cộng tác viên"],
 ];
 
+/* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
+   visible at a glance — TD-0009. Keep in step with the server VERSION. */
+const APP_VERSION = "0.3.1";
+
+/* Status filter chips on the Việc screen, in the owner's order. */
+const STATUS_CHIPS = [
+  ["", "🗂", "Tất cả"],
+  ["DRAFT", "📝", "Nháp"],
+  ["PENDING", "⏳", "Chờ duyệt"],
+  ["APPROVED_WAITING", "✅", "Đã duyệt · chờ đăng"],
+  ["PUBLISHED", "🚀", "Đã đăng"],
+  ["REJECTED", "↩️", "Bị trả lại"],
+  ["RETRACTED", "↩️", "Đã thu hồi"],
+  ["CANCELLED", "🗑", "Đã hủy"],
+];
+
 const state = {
   me: null,
   route: "dashboard",
   taskCode: null,
   period: "all",
+  taskStatus: "",
   wizard: null,
   usersCache: [],
 };
@@ -404,6 +421,14 @@ async function renderTasks() {
   if (me.can_manage_users) {
     users = (await api("/api/users").catch(() => ({ items: [] }))).items;
   }
+  // TD-0009: the status filter survives leaving/returning to this
+  // screen — kept in state, mirrored to the URL hash (#tasks?status=…).
+  const hashParams = new URLSearchParams(location.hash.split("?")[1] || "");
+  const hashStatus = hashParams.get("status");
+  if (hashStatus !== null
+      && STATUS_CHIPS.some(([code]) => code === hashStatus)) {
+    state.taskStatus = hashStatus;
+  }
   $("#screen").innerHTML = `
     <div class="page-head">
       <div><h2>📋 Danh sách việc</h2><p>Tìm kiếm và lọc theo trạng thái, kênh, người tạo.</p></div>
@@ -411,26 +436,52 @@ async function renderTasks() {
     </div>
     <form id="taskFilters" class="filters">
       <input name="q" placeholder="🔎 Tìm theo mã việc hoặc gợi ý…">
-      <select name="status"><option value="">Tất cả trạng thái</option>
-        ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
       <select name="channel"><option value="">Tất cả kênh</option>
         ${CHANNELS.map((c) => `<option value="${c.key}">${c.icon} ${c.name}</option>`).join("")}</select>
       <select name="creator"><option value="">Tất cả người tạo</option>
         <option value="${me.id}">Của tôi</option>
         ${users.filter((u) => u.id !== me.id).map((u) => `<option value="${u.id}">${esc(u.display_name)}</option>`).join("")}</select>
     </form>
+    <div class="status-chips" id="statusChips" aria-label="Lọc theo trạng thái"></div>
     <div id="taskList" class="list"><div class="loading">⏳ Đang tải…</div></div>`;
   $("#tasksCreate").addEventListener("click", () => navigate("create"));
+  let lastCounts = null;
+  const paintChips = () => {
+    const box = $("#statusChips");
+    if (!box) return;
+    const totalAll = lastCounts
+      ? Object.values(lastCounts).reduce((sum, n) => sum + n, 0) : null;
+    box.innerHTML = STATUS_CHIPS.map(([code, icon, label]) => {
+      const n = code === "" ? totalAll
+        : (lastCounts ? (lastCounts[code] || 0) : null);
+      return `<button type="button" class="status-chip ${state.taskStatus === code ? "active" : ""}"
+        data-status-chip="${code}">${icon} ${label}${n !== null ? ` <span class="chip-count">${n}</span>` : ""}</button>`;
+    }).join("");
+    $$("[data-status-chip]", box).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        state.taskStatus = btn.dataset.statusChip;
+        history.replaceState(null, "", state.taskStatus
+          ? `#tasks?status=${state.taskStatus}` : "#tasks");
+        paintChips();
+        load().catch((e) => toast(e.message, true));
+      }));
+  };
   const load = async () => {
     const params = new URLSearchParams(new FormData($("#taskFilters")));
     for (const [key, value] of [...params.entries()]) if (!value) params.delete(key);
+    if (state.taskStatus) params.set("status", state.taskStatus);
     params.set("limit", "100");
     const data = await api(`/api/tasks?${params}`);
+    lastCounts = data.counts || null;
+    paintChips();
     $("#taskList").innerHTML = data.items.length
       ? data.items.map(taskRow).join("")
-      : `<div class="empty">Không tìm thấy việc nào khớp bộ lọc.</div>`;
+      : `<div class="empty">${state.taskStatus
+          ? "Không có việc nào ở trạng thái này."
+          : "Không tìm thấy việc nào khớp bộ lọc."}</div>`;
     bindTaskCards($("#taskList"));
   };
+  paintChips();
   $("#taskFilters").addEventListener("input", () => load().catch((e) => toast(e.message, true)));
   $("#taskFilters").addEventListener("submit", (e) => e.preventDefault());
   await load();
@@ -455,9 +506,9 @@ async function renderCreate() {
   if (w.step === 1) {
     body = `
       <div class="drop-box">
-        <p style="font-size:2rem;margin:.2rem">📎</p>
+        <p class="drop-icon">📎</p>
         <p><strong>Chọn ảnh, video hoặc tệp tư liệu</strong></p>
-        <p class="muted">Tối đa 200MB mỗi file. File được lưu thẳng vào hồ sơ việc như tư liệu gửi qua Telegram.</p>
+        <p class="muted drop-note">Tối đa 200MB mỗi file. File được lưu thẳng vào hồ sơ việc như tư liệu gửi qua Telegram.</p>
         <input type="file" id="wizardFiles" multiple accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip">
       </div>
       <div class="preview-grid">${w.files.map((file, i) => previewTile(file, i)).join("")}</div>`;
@@ -534,7 +585,7 @@ function previewTile(file, index) {
     ? `<img src="${url}" alt="">`
     : file.type.startsWith("video/")
       ? `<video src="${url}" muted preload="metadata"></video>`
-      : `<div style="height:110px;display:grid;place-items:center;font-size:2.2rem;background:#f1f5f9">📄</div>`;
+      : `<div class="preview-ph">📄</div>`;
   return `<div class="preview">${media}<button class="remove" data-remove-file="${index}" aria-label="Bỏ file">✕</button><div class="fname">${esc(file.name)}<br><span class="muted">${fmtBytes(file.size)}</span></div></div>`;
 }
 
@@ -986,7 +1037,8 @@ async function renderUsers() {
     </section>
     <div class="user-grid" style="margin-top:1rem">
       ${data.items.map(userCard).join("")}
-    </div>`;
+    </div>
+    <p class="muted small center" style="margin-top:1rem">Phiên bản ${APP_VERSION}</p>`;
   $("#createUserForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.target);
@@ -1090,27 +1142,61 @@ async function initPushPanel() {
   const enableBtn = $("#pushEnable");
   const disableBtn = $("#pushDisable");
   const testBtn = $("#pushTest");
-  if (!box) return;
+  if (!box || !enableBtn || !disableBtn || !testBtn) return;
+  // TD-0009: the panel must ALWAYS end in a clear, visible state —
+  // never leave every button hidden looking like the feature is gone.
+  // Each step is guarded separately and failures say so in the card.
+  const setButtons = (enable, disable, test) => {
+    if (enableBtn) enableBtn.hidden = !enable;
+    if (disableBtn) disableBtn.hidden = !disable;
+    if (testBtn) testBtn.hidden = !test;
+  };
+  const fail = (message) => {
+    box.textContent = `⚠️ ${message}`;
+    setButtons(false, false, false);
+  };
   const supported = "serviceWorker" in navigator && "PushManager" in window
     && "Notification" in window;
   if (!supported) {
-    box.textContent = "Trình duyệt này không hỗ trợ thông báo đẩy (cần HTTPS và trình duyệt hiện đại).";
+    box.textContent = "Trình duyệt này không hỗ trợ thông báo đẩy (cần HTTPS và trình duyệt hiện đại; trên iPhone hãy mở app từ biểu tượng ở màn hình chính).";
+    setButtons(false, false, false);
     return;
   }
-  const registration = await navigator.serviceWorker.ready;
+  let registration;
+  try {
+    registration = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error("quá thời gian chờ")), 6000)),
+    ]);
+  } catch {
+    fail("Chưa kết nối được với nền tảng thông báo của trình duyệt (service worker chưa sẵn sàng). Hãy tải lại trang rồi mở lại mục này.");
+    return;
+  }
+  if (!registration.pushManager) {
+    box.textContent = "Trình duyệt này không hỗ trợ thông báo đẩy.";
+    setButtons(false, false, false);
+    return;
+  }
   const refresh = async () => {
-    const sub = await registration.pushManager.getSubscription();
+    let sub;
+    try {
+      sub = await registration.pushManager.getSubscription();
+    } catch (err) {
+      fail(`Không kiểm tra được trạng thái thông báo đẩy: ${err.message}`);
+      return;
+    }
     if (Notification.permission === "denied") {
       box.innerHTML = "⚠️ Bạn đã chặn thông báo cho trang này — hãy mở cài đặt trình duyệt, cho phép thông báo cho <strong>post.iaict-platform.com</strong> rồi quay lại bật.";
-      enableBtn.hidden = true; disableBtn.hidden = true; testBtn.hidden = true;
+      setButtons(false, false, false);
       return;
     }
     if (sub) {
       box.textContent = "✅ Đang bật trên thiết bị này — việc mới, chờ duyệt, đã đăng… sẽ hiện ngay cả khi đóng app.";
-      enableBtn.hidden = true; disableBtn.hidden = false; testBtn.hidden = false;
+      setButtons(false, true, true);
     } else {
       box.textContent = "Đang tắt trên thiết bị này. Bật để nhận việc mới, thẻ chờ duyệt, bài đã đăng… ngay cả khi đóng app.";
-      enableBtn.hidden = false; disableBtn.hidden = true; testBtn.hidden = true;
+      setButtons(true, false, false);
     }
   };
   enableBtn.addEventListener("click", async () => {
@@ -1158,7 +1244,8 @@ async function renderNotifications() {
   const data = await api("/api/notifications");
   updateBadges(data.unread);
   $("#screen").innerHTML = `
-    <div class="page-head"><div><h2>🔔 Thông báo</h2><p>${data.unread} thông báo chưa đọc.</p></div>
+    <div class="page-head"><div><h2>🔔 Thông báo</h2><p>${data.unread} thông báo chưa đọc.</p>
+      <p class="muted small">Phiên bản ${APP_VERSION}</p></div>
       <button class="btn" id="markAll">Đánh dấu tất cả đã đọc</button></div>
     <section class="card" style="margin-bottom:1rem">
       <div class="row-item"><h3>📲 Thông báo đẩy</h3></div>
@@ -1175,14 +1262,30 @@ async function renderNotifications() {
     renderNotifications();
   });
   bindNotificationRows();
-  initPushPanel().catch(() => {});
+  initPushPanel().catch((err) => {
+    const box = $("#pushState");
+    if (box) box.textContent = `⚠️ Không khởi tạo được mục thông báo đẩy: ${err.message}`;
+  });
 }
 
 /* =============================== boot =============================== */
 
 if ("serviceWorker" in navigator) {
+  // TD-0009: check for a newer worker on every launch, and when a new
+  // worker takes control (skipWaiting in sw.js), reload ONCE so an
+  // installed PWA never stays stuck on a stale cached shell. The very
+  // first install has no previous controller — no reload then.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register("/sw.js")
+      .then((registration) => registration.update().catch(() => {}))
+      .catch(() => {});
   });
 }
 boot();

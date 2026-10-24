@@ -88,7 +88,13 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(15,118,110,.18);b
 .row-main{min-width:0;flex:1}
 .row-main strong{overflow-wrap:anywhere}
 .meta-line{overflow-wrap:anywhere;margin:.18rem 0}
-.filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(3,minmax(140px,1fr));gap:.7rem;margin-bottom:1rem}
+.filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(140px,1fr));gap:.7rem;margin-bottom:.6rem}
+.status-chips{display:flex;gap:.45rem;overflow-x:auto;padding:.15rem .05rem .55rem;margin-bottom:.35rem;scrollbar-width:none}
+.status-chips::-webkit-scrollbar{display:none}
+.status-chip{flex:0 0 auto;border:1.5px solid var(--line);background:#fff;color:#24423f;border-radius:999px;padding:.42rem .75rem;font-weight:700;font-size:.9rem;white-space:nowrap}
+.status-chip.active{background:var(--teal);border-color:var(--teal);color:#fff}
+.status-chip .chip-count{background:rgba(15,118,110,.12);border-radius:999px;padding:.05rem .45rem;font-size:.8rem;font-weight:800}
+.status-chip.active .chip-count{background:rgba(255,255,255,.25)}
 .empty{padding:2rem 1rem;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:var(--radius);background:#fff}
 .toast{position:fixed;left:50%;bottom:92px;transform:translate(-50%,20px);background:#17202a;color:#fff;padding:.75rem 1rem;border-radius:12px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.22s;z-index:100;max-width:min(92vw,560px);text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -117,9 +123,18 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(15,118,110,.18);b
 .step.active{background:var(--teal);color:#fff}
 .step.done{background:var(--teal-soft);color:var(--teal-dark)}
 .drop-box{border:2px dashed #94a3b8;border-radius:16px;padding:1.2rem;text-align:center;background:#f8fafc}
+.drop-box .drop-icon{font-size:2rem;margin:.2rem}
+/* Desktop balance (TD-0009, both-platforms correction): the full-width
+   picker reads coarse at ~230px tall — tighten its vertical rhythm and
+   icon a notch without changing the approved layout. */
+@media (min-width:821px){
+  .drop-box{padding:.85rem 1rem}
+  .drop-box .drop-icon{font-size:1.55rem}
+}
 .preview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(132px,100%),1fr));gap:.7rem;margin-top:.8rem}
 .preview{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
 .preview img,.preview video{width:100%;height:110px;object-fit:cover;display:block;background:#0f172a}
+.preview .preview-ph{height:110px;display:grid;place-items:center;font-size:2.2rem;background:#f1f5f9}
 .preview .remove{position:absolute;top:.35rem;right:.35rem;width:32px;height:32px;border-radius:50%;border:0;background:rgba(0,0,0,.72);color:#fff}
 .preview .fname{font-size:.78rem;padding:.45rem;overflow-wrap:anywhere}
 .channel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:.7rem}
@@ -170,10 +185,9 @@ th{background:#f8fafc}
   .app-shell{display:block;padding-bottom:74px}
   .sidebar{display:none}
   .topbar{display:flex}
-  .mobile-nav{display:flex;gap:.45rem;overflow-x:auto;padding:.55rem .7rem;background:#fff;border-bottom:1px solid var(--line);scrollbar-width:none}
-  .mobile-nav::-webkit-scrollbar{display:none}
-  .mobile-nav .nav-btn{width:auto;white-space:nowrap;background:#eef4f4;color:#24423f;border:1px solid var(--line)}
-  .mobile-nav .nav-btn.active{background:var(--teal);color:#fff}
+  /* TD-0009: no top chip nav on mobile — it duplicated the bottom
+     bar. Navigation on small screens is the bottom nav only. */
+  .mobile-nav{display:none}
   .screen{padding:.85rem}
   .bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(255,255,255,.97);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);padding:.35rem .25rem calc(.35rem + env(safe-area-inset-bottom))}
   .bottom-nav .nav-btn{flex-direction:column;justify-content:center;gap:.12rem;color:#475569;padding:.38rem .1rem;font-size:.72rem;text-align:center}
@@ -182,4 +196,15 @@ th{background:#f8fafc}
   .filters{grid-template-columns:minmax(0,1fr)}
   .user-actions{grid-template-columns:minmax(0,1fr)}
   .page-head h2{font-size:1.3rem}
+  /* TD-0009: compact file picker (wizard step 1) on mobile. */
+  .drop-box{padding:.55rem .5rem;border-radius:12px}
+  .drop-box .drop-icon{font-size:1.15rem;margin:0}
+  .drop-box p{margin:.12rem 0}
+  .drop-box .drop-note{font-size:.76rem}
+  .drop-box input[type="file"]{padding:.45rem .55rem}
+  .preview-grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:.45rem;margin-top:.5rem}
+  .preview img,.preview video{height:58px}
+  .preview .preview-ph{height:58px;font-size:1.3rem}
+  .preview .fname{font-size:.66rem;padding:.3rem;line-height:1.25}
+  .preview .remove{width:24px;height:24px;top:.25rem;right:.25rem;font-size:.78rem}
 }

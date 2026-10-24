@@ -1,11 +1,21 @@
-/* Giao Việc IAICT — service worker: cache the app shell only.
+/* Giao Việc IAICT — service worker.
    API calls are never cached (they carry live, permission-checked
-   business data). GĐ3 adds Web Push display + click-through. */
-const CACHE = "giao-viec-iaict-v3";
+   business data). GĐ3 adds Web Push display + click-through.
+   TD-0009 (v4): the app shell (index.html, app.js, styles.css) is
+   NETWORK-FIRST so a new deploy reaches installed PWAs immediately —
+   a cache-first shell once kept a phone stuck on the previous UI.
+   Other static assets (icons, manifest) stay cache-first.
+   skipWaiting + clients.claim make a new worker take over at once;
+   app.js reloads the page once when control changes hands. */
+const CACHE = "giao-viec-iaict-v4";
+/* index.html references the shell assets with a ?v=<release> query:
+   Cloudflare's edge once kept serving a stale /app.js under its
+   plain URL (default TTL) even after the origin had the new file. */
 const SHELL = [
-  "/", "/index.html", "/app.js", "/styles.css",
+  "/", "/index.html", "/app.js?v=0.3.1", "/styles.css?v=0.3.1",
   "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png",
 ];
+const SHELL_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -26,14 +36,25 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") || event.request.method !== "GET") {
     return; // network only for API and writes
   }
+  const cacheCopy = (response) => {
+    if (response && response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+    }
+    return response;
+  };
+  if (SHELL_PATHS.has(url.pathname) || event.request.mode === "navigate") {
+    // App shell: network-first, cache only as the offline fallback.
+    event.respondWith(
+      fetch(event.request)
+        .then(cacheCopy)
+        .catch(() => caches.match(event.request).then((hit) => hit || caches.match("/")))
+    );
+    return;
+  }
+  // Other static assets: cache-first, refreshed from network on a miss.
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request).then((hit) => hit || caches.match("/")))
+    caches.match(event.request).then((hit) => hit || fetch(event.request).then(cacheCopy))
   );
 });
 

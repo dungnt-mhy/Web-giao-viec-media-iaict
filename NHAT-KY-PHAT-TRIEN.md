@@ -277,3 +277,154 @@ vào THAY-DOI.md trước khi code, đóng giai đoạn bằng SRS 1.2.
 
 - **GĐ4**: chuyển đội sang Web App + tắt dần bot (tên miền/HTTPS đã
   xong trước ở TD-0007).
+
+## 2026-10-24 — TD-0009: sửa giao diện mobile theo phản hồi dùng thật ✅
+
+Người dùng mở app trên điện thoại và báo 4 điểm (ảnh chụp màn Thông
+báo không có mục bật thông báo đẩy; menu trên/dưới trùng nhau; cần lọc
+việc theo trạng thái; block chọn ảnh/video Bước 1 quá to) + chỉ đạo từ
+nay mặc định chỉ mobile. Version app 0.3.0 → **0.3.1**. SRS: chưa tổng
+hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
+
+### 1. Khối "📲 Thông báo đẩy" không hiện — nguyên nhân: vỏ app cũ trong cache service worker trên máy người dùng
+
+- Bằng chứng: thẻ "📲 Thông báo đẩy" chỉ tồn tại trong mã bản 0.3.0
+  (TD-0008) và được render vô điều kiện trong cùng một `innerHTML` của
+  màn Thông báo — nếu app.js 0.3.0 chạy, thẻ phải nằm trong DOM kể cả
+  khi `initPushPanel` lỗi. Ảnh chụp của người dùng không có thẻ này
+  ⇒ máy đang chạy app.js bản GĐ2 (0.2.0), tức vỏ app cũ do service
+  worker đời trước giữ trong cache; phía máy chủ đã phục vụ bản GĐ3
+  từ khi đóng GĐ3 (smoke lúc đó: /sw.js công khai có handler push,
+  /api/health = 0.3.0).
+- Xử lý trong `sw.js` (cache **v4**): vỏ app (`/`, `/index.html`,
+  `/app.js`, `/styles.css` + mọi điều hướng) chuyển hẳn sang
+  **network-first** (cache chỉ là dự phòng mất mạng); tài nguyên tĩnh
+  còn lại (icon, manifest) cache-first. Giữ `skipWaiting` +
+  `clients.claim`.
+- Phía `app.js`: mỗi lần mở app gọi `registration.update()` kiểm tra
+  SW mới; khi SW mới tiếp quản (`controllerchange`, chỉ khi đã có
+  controller trước đó) thì tự tải lại trang đúng 1 lần — PWA đã cài
+  không còn kẹt vỏ cũ.
+- Hiện số phiên bản nhỏ "Phiên bản 0.3.1" dưới tiêu đề màn Thông báo
+  và cuối màn Người dùng để đối chiếu cũ/mới bằng mắt.
+- Rà `initPushPanel`: bọc lỗi từng bước (chờ service worker có
+  timeout 6s; kiểm tra `pushManager`; `getSubscription`) — thẻ LUÔN
+  kết thúc ở một trạng thái chữ rõ ràng (không hỗ trợ / chưa sẵn sàng /
+  đã chặn / đang tắt / đang bật / lỗi kèm nội dung lỗi), không còn
+  cảnh mọi nút cùng ẩn như tính năng "biến mất".
+
+### 2. Trùng menu mobile
+
+- Trong breakpoint ≤820px: ẩn hẳn `.mobile-nav` (hàng chip trượt
+  ngang dưới header). Điều hướng mobile chỉ còn thanh dưới đáy;
+  header giữ nguyên. Desktop không đổi (sidebar; `.mobile-nav` vốn
+  đã ẩn ở desktop).
+
+### 3. Lọc việc theo trạng thái
+
+- Backend `GET /api/tasks`: lọc `?status=` theo trạng thái việc suy
+  ra bằng CHÍNH logic của bot Store — handler gọi
+  `Store.sync_task_status_from_outputs` cho từng việc trong tập khả
+  kiến rồi mới lọc/đếm, không tự chế logic suy ra thứ hai. Phản hồi
+  thêm `counts`: số việc từng trạng thái (đủ 7 mã) trên tập việc khớp
+  các bộ lọc còn lại (q/kênh/người tạo), TRƯỚC khi áp bộ lọc trạng
+  thái. `total` giữ ngữ nghĩa cũ (số việc sau mọi bộ lọc).
+- Frontend màn Việc: bỏ ô select trạng thái, thay bằng hàng chip
+  trượt ngang: Tất cả • 📝 Nháp • ⏳ Chờ duyệt • ✅ Đã duyệt · chờ
+  đăng • 🚀 Đã đăng • ↩️ Bị trả lại • ↩️ Đã thu hồi • 🗑 Đã hủy —
+  mỗi chip kèm số lượng từ `counts`; chip chọn nổi bật teal. Lựa
+  chọn giữ trong `state.taskStatus` + URL hash `#tasks?status=…`
+  nên quay lại màn vẫn nguyên bộ lọc. Danh sách rỗng khi đang lọc:
+  "Không có việc nào ở trạng thái này."
+
+### 4. Gọn block chọn file Bước 1 (mobile)
+
+- Chỉ trong breakpoint ≤820px: `.drop-box` padding 1.2rem → .55rem,
+  icon 📎 2rem → 1.15rem, ghi chú 200MB/tệp hạ cỡ chữ .76rem, ô input
+  gọn lại; lưới file đã chọn: cột tối thiểu 132px → 76px, thumbnail
+  110px → 58px, tên file .66rem, nút xóa 32px → 24px. Placeholder
+  file không phải ảnh/video chuyển từ inline style sang class
+  `.preview-ph` để CSS mobile điều khiển được. Desktop giữ nguyên.
+
+### Phát hiện thêm khi smoke: Cloudflare edge cũng giữ bản app.js cũ
+
+- Kiểm chứng public sau restart: `/api/health` = 0.3.1, `/sw.js` =
+  v4, nhưng `/app.js` theo URL thường vẫn là BẢN CŨ (57.565 byte,
+  không có mã 0.3.1) trong khi origin/local và URL kèm tham số lạ
+  đều trả bản mới (61.760 byte). Nguyên nhân: origin trước đây không
+  gửi `Cache-Control` cho app.js/styles.css nên Cloudflare áp TTL
+  mặc định của nó (`max-age=14400`) và giữ bản cũ ở edge. Đây là
+  tầng cache thứ hai (ngoài service worker trên máy) khiến thiết
+  bị kẹt vỏ cũ.
+- Xử lý: (1) origin gửi `Cache-Control: no-cache` cho toàn bộ vỏ
+  app (index.html, sw.js, app.js, styles.css); (2) `index.html`
+  tham chiếu tài nguyên kèm phiên bản (`/app.js?v=0.3.1`,
+  `/styles.css?v=0.3.1`) và `sw.js` nạp vỏ theo đúng URL có phiên
+  bản đó — URL mới là khóa cache mới ở mọi tầng. Đã thử purge cache
+  qua API Cloudflare bằng token nhúng trong cert.pem: bị 401 (token
+  đó không có quyền Cache Purge) nên dùng hai cách trên thay thế —
+  sau sửa, kiểm lại public bằng đúng URL trình duyệt gọi: HTML trỏ
+  bản ?v=0.3.1, app.js 61.760 byte có APP_VERSION 0.3.1, styles.css
+  đủ 13.920 byte, sw.js v4.
+
+### Kiểm chứng
+
+- Test webapp: **52/52 đạt** (51 cũ + test mới
+  `test_task_list_status_filter_and_counts`: dựng đủ 7 trạng thái
+  suy ra, kiểm `counts` đúng tuyệt đối trong phạm vi q=, lọc từng
+  `?status=` trả đúng tập con và `total`, counts không bị chính bộ
+  lọc trạng thái thu hẹp; chạy lại lần hai sau khi đổi header/static
+  vẫn 52/52). Test bot: **215/215**, không hồi quy.
+- Triển khai: restart `webapp-giao-viec` (active), smoke local
+  `/api/health` = 0.3.1 + header `Cache-Control: no-cache` trên
+  app.js; smoke công khai https://post.iaict-platform.com: health
+  0.3.1, sw.js v4, vỏ app bản ?v=0.3.1 đúng như trên.
+
+### Điểm tự chốt (chờ người dùng duyệt lại)
+
+1. `counts` đếm trên tập việc khớp các bộ lọc còn lại (từ khóa/kênh/
+   người tạo) chứ không phải toàn bộ việc — chip phản ánh đúng ngữ
+   cảnh đang xem; muốn số toàn cục thì bỏ các bộ lọc còn lại.
+2. Việc lưu bộ lọc dùng cả state lẫn URL hash `#tasks?status=…`;
+   app vốn không dùng hash routing nên hash chỉ đóng vai trò ghi
+   nhớ, mở link có hash vẫn vào app bình thường.
+
+### TD-0009 — Bổ sung theo đính chính "làm kỹ cả desktop lẫn mobile" + kiểm chứng hai khung hình (24/10/2026, sau triển khai)
+
+- **Đính chính của người dùng** (ghi đè cách hiểu "chỉ mobile"):
+  giao diện phải chuẩn chỉnh, đẹp, thật kỹ cho CẢ desktop lẫn
+  mobile; người dùng thao tác hằng ngày trên mobile nên phản hồi
+  đến từ mobile, nhưng desktop không được bỏ bê.
+- **Mục 2 rà cả hai nền**: desktop VỐN không có hàng chip ngang —
+  `.mobile-nav` bị `display:none` ở rule gốc và chỉ hiện trong
+  breakpoint ≤820px, nên desktop chỉ có sidebar (đầy đủ như thiết
+  kế đã duyệt) — không cần sửa thêm; mobile ẩn hàng chip trên, giữ
+  thanh dưới đáy (đã làm).
+- **Mục 4 rà desktop**: block chọn file ở 1440px đo 1104×229px,
+  icon 2rem — hơi thô/to so với bố cục chung. Đã siết nhẹ trong
+  `@media (min-width:821px)`: padding .85rem/1rem, icon 1.55rem →
+  đo lại 1104×209px. Không đổi cấu trúc/bố cục đã duyệt. Mobile
+  giữ nguyên sau siết: 329×150px, icon 18.4px, thumbnail 58px.
+- **Kiểm chứng hiển thị hai khung** (instance bản sao DB chạy cổng
+  nội bộ + Chromium headless lái qua CDP, chụp 4 màn chính × 2
+  khung 390px/1440px, ảnh lưu ở `~/workspace/shot-td0009/`):
+  - 390px: Thông báo có thẻ "📲 Thông báo đẩy" với trạng thái rõ
+    "Đang tắt trên thiết bị này…" + nút bật + dòng "Phiên bản
+    0.3.1"; Việc có hàng chip trạng thái kèm số (Tất cả 13, Nháp 4,
+    Chờ duyệt 0, Đã duyệt·chờ đăng 3, Đã đăng 2, Bị trả lại 1, Đã
+    thu hồi 2, Đã hủy 1 — tổng khớp 13 việc thật); wizard Bước 1
+    gọn (block 150px, thumbnail lưới nhỏ kèm tên/dung lượng/nút ✕);
+    không tràn ngang; điều hướng chỉ còn thanh dưới đáy.
+  - 1440px: sidebar đầy đủ (logo, đủ mục theo quyền, thẻ người
+    dùng), không chip-nav trùng; chip trạng thái hiện đủ trên màn
+    Việc; thẻ thông báo đẩy + số phiên bản hiện; block chọn file
+    cân đối sau siết (209px); không tràn ngang.
+- **Sự cố hạ tầng giữa chừng**: máy chủ lại bị thay (~05:0x) làm
+  mất /tmp và toàn bộ unit/env systemd. Đã khôi phục đủ 5 service
+  theo quy trình quen thuộc (tạo lại /etc/default/<service> 600
+  chứa proxy egress, chép unit từ thư mục dự án/tools, daemon-
+  reload, enable --now): cf-dns-stub, cf-edge-relay,
+  webapp-giao-viec, telegram-bot-giao-viec, cloudflared-webapp —
+  kiểm chứng health local + public đều 0.3.1, bot long-polling
+  bình thường. Mã nguồn TD-0009 trong workspace không bị ảnh
+  hưởng.
