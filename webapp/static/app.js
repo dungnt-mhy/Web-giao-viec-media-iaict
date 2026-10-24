@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.3.1";
+const APP_VERSION = "0.3.2";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -168,8 +168,9 @@ function renderNav(unread = null) {
     bottomItems.push(...items.filter((i) => i.route === "schedule"));
   }
   $("#bottomNav").innerHTML = bottomItems.slice(0, 5).map((item) => `
-    <button class="nav-btn ${state.route === item.route ? "active" : ""}" data-nav="${item.route}">
+    <button class="nav-btn ${state.route === item.route ? "active" : ""}" data-nav="${item.route}" aria-label="${item.label}">
       <span>${item.icon}</span><span>${item.label}</span>
+      ${item.badge ? `<span class="badge" data-unread-badge ${unread ? "" : "hidden"}>${unread || ""}</span>` : ""}
     </button>`).join("");
   $$("[data-nav]").forEach((btn) =>
     btn.addEventListener("click", () => navigate(btn.dataset.nav)));

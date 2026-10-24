@@ -197,9 +197,24 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0010 — Làm đẹp thanh điều hướng dưới đáy (mobile)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án ("Menu dưới thiết kế đẹp chút").
+- Nội dung: thanh dưới đáy mobile từ dạng dải phẳng sát mép thành thanh
+  nổi bo tròn (khoảng hở hai bên + dưới, nền trắng mờ blur, bóng mềm);
+  mục đang chọn hiện icon trong viên thuốc màu teal nhạt + chữ đậm màu
+  teal đậm; nút Giao việc ở giữa thành nút tròn teal nổi cao hơn thanh
+  (nhận diện chính của app); badge chưa đọc bám góc trên của icon;
+  khoảng đệm cuối nội dung tăng để thanh nổi không che nội dung. Chỉ
+  đổi CSS/HTML của bottom nav (mobile); sidebar desktop không đổi.
+- Ảnh hưởng: không đổi SRS (chỉ thẩm mỹ) — bản app 0.3.1 → 0.3.2.
+- Trạng thái SRS: ⏳ Chờ tổng hợp (mục thẩm mỹ, gộp cùng lần tới).
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
 - **TD-0007** — ⏳ Chờ tổng hợp vào SRS khi đóng GĐ4 (phần tên miền/HTTPS đã xong 24/10/2026).
+- **TD-0010** — ⏳ Chờ tổng hợp (làm đẹp bottom nav mobile, bản 0.3.2).
 - **TD-0008** — ✅ Đã tổng hợp vào **SRS 1.2** ngày 24/10/2026 (đóng GĐ3).
 - **TD-0009** — ⏳ Chờ tổng hợp (sửa giao diện mobile: thông báo đẩy/cache SW v4, bỏ trùng menu, lọc việc theo trạng thái, gọn block chọn file; 24/10/2026).

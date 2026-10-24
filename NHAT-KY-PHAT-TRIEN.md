@@ -428,3 +428,6 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   kiểm chứng health local + public đều 0.3.1, bot long-polling
   bình thường. Mã nguồn TD-0009 trong workspace không bị ảnh
   hưởng.
+
+## 2026-10-24 — TD-0010: làm đẹp thanh điều hướng dưới đáy (mobile)
+- Bottom nav từ dải phẳng sát mép thành thanh nổi bo tròn (nền trắng mờ blur, bóng mềm, hở viền + safe-area); mục đang chọn: icon trong viên thuốc teal nhạt + chữ đậm teal đậm; nút Giao việc ở giữa thành nút tròn teal nổi cao hơn thanh; badge chưa đọc bám góc icon (đã thêm badge vào template bottom nav, trước đây chỉ có ở chuông topbar); đệm cuối nội dung và vị trí toast chỉnh theo chiều cao thanh mới. Sidebar desktop không đổi. Bản 0.3.2, SW cache v5, kiểm thử webapp 52/52.
