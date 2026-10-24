@@ -593,3 +593,42 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   mới, đủ 5 service active. Sao lưu trước khi sửa tại
   data/backup-td14-20261024-144916/ (bản sao webapp + bot.db).
   SRS: TD-0014 (cùng TD-0012, TD-0013) vẫn ⏳ chờ gộp sau.
+
+## TD-0015 — Sửa 6 việc: khóa nơi đang chờ, link Facebook kiểu cũ, thông báo web botctl, badge PWA, icon xem thêm, tải muộn (bản 0.5.2, 24/10/2026)
+- Người dùng phản hồi sau 0.5.1 (bằng chứng CV-0014 có 2 audit
+  publish_requested giống nhau cho profile).
+- (1) Khóa nơi đang chờ: locked = done ∪ (request − done − failed);
+  lịch chờ giờ không khóa (sửa lịch được); hủy đăng dọn
+  publish_targets (webapp publish-abort + bot publish abort) để
+  lệnh đã hủy không khóa oan vĩnh viễn; server chặn 409 khi toàn
+  bộ nơi chọn đều khóa, chọn lẫn thì chỉ đăng nơi mở + báo rõ
+  nơi bị bỏ qua; nơi lỗi không bao giờ bị khóa. Bất biến đã xác
+  minh trước khi code: mark_fb_place_failed KHÔNG dọn tập lệnh
+  (nơi lỗi vẫn nằm trong request) nên công thức request − done −
+  failed là đúng, không cần sửa luồng failed.
+- (2) Link kiểu cũ: fb_state (chỉ với PUBLISHED/RETRACTED) suy nơi
+  đăng từ audit publish_requested gần nhất (targets= rồi target=);
+  không có target thì key "legacy" hiển thị "Facebook", không
+  lọt vào done của modal (lọc theo nơi hợp lệ).
+- (3) botctl set-output-published/place-failed/retracted (kể cả
+  --place) đồng thời ghi web_notification_items (INSERT OR IGNORE,
+  key published:/publish_failed:/retracted: + id đầu ra + id
+  audit) kèm link từng nơi; --no-notify tắt cả hai; thiếu token
+  Telegram không chặn hàng web. Bảng này là global nên hàng mới
+  tới mọi người dùng (người tạo có thể thấy trùng với dòng suy ra
+  từ trạng thái — dòng global mang link từng nơi).
+- (4) Badge PWA: updateBadges đồng bộ setAppBadge/clearAppBadge
+  (guard, best-effort); SW đồng bộ khi nhận push (fetch số chưa
+  đọc). Giới hạn: iOS không có Badging API nên badge chỉ chạy
+  Android/Chrome (và Chrome desktop).
+- (5) Icon "Thêm" thanh dưới: ▦ → ••• (duy nhất một chỗ).
+- (6) Tải muộn: form tải thêm chú thích khi việc đã có thẻ kênh;
+  thêm file vào việc đã có thẻ kênh thì đẩy web cho người
+  duyệt/Admin qua _notify_async; giữ phân quyền, không đổi trạng
+  thái.
+- Kiểm thử: webapp 57/57 (54 cũ + 3 mới), bot 242/242 (230 cũ + 4
+  mới × 3 lớp test). Probe trên bản sao DB thật: link legacy
+  CV-0013 suy đúng profile, khóa đúng (live khóa cả 2, lỗi vẫn
+  mở), botctl ghi đủ hàng web kèm link, hủy dọn request; sha DB
+  thật không đổi. Health local + public 0.5.2, login 200, đủ 5
+  service active.

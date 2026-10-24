@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.1";
+const APP_VERSION = "0.5.2";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -183,7 +183,7 @@ function renderNav(unread = null) {
     bottomItems.push({ route: "review", icon: "⏳", label: "Chờ duyệt", reviewBadge: true });
   }
   bottomItems.push({ route: "notifications", icon: "🔔", label: "Thông báo", badge: true });
-  if (extras.length) bottomItems.push({ route: "__more", icon: "▦", label: "Thêm", more: true });
+  if (extras.length) bottomItems.push({ route: "__more", icon: "•••", label: "Thêm", more: true });
   $("#bottomNav").innerHTML = bottomItems.map((item) => {
     if (item.fab) {
       return `<button class="nav-btn fab-btn" data-nav="create" aria-label="Giao việc">
@@ -238,6 +238,16 @@ function updateBadges(unread, reviewCount = null) {
     badge.hidden = !unread;
     badge.textContent = unread || "";
   });
+  // TD-0015: home-screen app icon badge (PWA badging). Every inbox
+  // load/refresh flows through here, so the badge tracks the true
+  // unread count and clears when everything is read. Guarded: iOS
+  // has no Badging API, so there this is silently a no-op.
+  if ("setAppBadge" in navigator) {
+    try {
+      if (unread) navigator.setAppBadge(unread).catch(() => {});
+      else if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+    } catch { /* badging is best-effort */ }
+  }
   $$("[data-review-badge]").forEach((badge) => {
     if (reviewCount === null) return;
     badge.hidden = !reviewCount;
@@ -811,9 +821,22 @@ async function fbTargets() {
 function fbPlaceShort(output, key) {
   const place = (output.fb_places || []).find((p) => p.key === key);
   if (place) return place.short;
+  if (key === "legacy") return "Facebook";
   if (key === "profile") return "Trang cá nhân";
   if (key && key.startsWith("page_")) return `Fanpage ${key.slice(5)}`;
   return key;
+}
+
+// TD-0015: JS mirror of store.fb_locked_places — locked = done ∪
+// (live request − done − failed). A schedule still waiting for its
+// time does not lock, so rescheduling keeps working.
+function fbLockedPlaces(output) {
+  const st = output?.fb_state || {};
+  const done = new Set(st.done || []);
+  if (output?.scheduled_at) return { locked: done, pending: new Set() };
+  const failed = new Set(st.failed || []);
+  const pending = new Set((st.request || []).filter((k) => !done.has(k) && !failed.has(k)));
+  return { locked: new Set([...done, ...pending]), pending };
 }
 
 function fbScheduleSuffix(output) {
@@ -923,6 +946,7 @@ async function renderDetail() {
         <form id="addFilesForm" style="margin-top:1rem">
           <label class="field">Thêm tư liệu<input type="file" id="addFiles" multiple></label>
           <button class="btn btn-soft btn-small" type="submit">⬆️ Tải thêm tư liệu</button>
+          ${outputs.length ? `<p class="muted small">Tư liệu mới chỉ gắn vào việc, Muse chưa được báo — nhắn Muse nếu muốn dùng tư liệu mới.</p>` : ""}
         </form>` : ""}
       </div>
     </details>
@@ -1015,15 +1039,18 @@ async function publishFlow(id, reload, alreadyPending = false) {
   }
   const targets = await fbTargets();
   const done = new Set(Object.keys(output?.fb_state?.urls || {}));
-  const available = targets.filter((t) => !done.has(t.key));
+  const { locked, pending } = fbLockedPlaces(output);
+  const available = targets.filter((t) => !locked.has(t.key));
   const doneLines = targets.filter((t) => done.has(t.key)).map((t) => `
     <label class="target-check muted"><input type="checkbox" checked disabled> ${esc(t.label)} · đã đăng</label>`).join("");
+  const pendingLines = targets.filter((t) => pending.has(t.key)).map((t) => `
+    <label class="target-check muted"><input type="checkbox" disabled> ${esc(t.label)} · đang chờ đăng</label>`).join("");
   const checks = available.map((t) => `
     <label class="target-check"><input type="checkbox" data-fb-place="${t.key}" checked> ${esc(t.label)}</label>`).join("");
   openModal(`
     <h3>📘 Chọn nơi đăng Facebook</h3>
-    <p class="muted">Chọn một hoặc nhiều nơi; lệnh đăng sẽ ghi kèm lựa chọn này. Nơi đã đăng xong không đăng lại.</p>
-    <div class="target-grid">${doneLines}${checks}</div>
+    <p class="muted">Chọn một hoặc nhiều nơi; lệnh đăng sẽ ghi kèm lựa chọn này. Nơi đã đăng xong không đăng lại; nơi đang chờ đăng (Muse đang đăng) cũng không chọn lại được.${available.length ? "" : " Tất cả nơi đăng đều đã xong hoặc đang chờ Muse đăng — không còn nơi nào để chọn."}</p>
+    <div class="target-grid">${doneLines}${pendingLines}${checks}</div>
     <div class="modal-actions">
       <button class="btn btn-danger" data-abort>🗑 Hủy đăng</button>
       <button class="btn btn-primary" data-confirm>🚀 Đăng lên ${available.length} nơi</button>
@@ -1058,11 +1085,13 @@ async function scheduleFlow(id, reload, alreadyPending = false) {
   const isFacebook = output?.channel === "facebook";
   const schedTargets = isFacebook ? await fbTargets() : [];
   const schedDone = new Set(Object.keys(output?.fb_state?.urls || {}));
+  const schedLock = isFacebook ? fbLockedPlaces(output) : { locked: new Set(), pending: new Set() };
   const schedChecks = isFacebook ? `
-    <p class="muted">📘 Nơi đăng Facebook — chọn một hoặc nhiều nơi.</p>
+    <p class="muted">📘 Nơi đăng Facebook — chọn một hoặc nhiều nơi. Nơi đã đăng xong không đăng lại; nơi đang chờ đăng (Muse đang đăng) cũng không chọn lại được.</p>
     <div class="target-grid">
       ${schedTargets.filter((t) => schedDone.has(t.key)).map((t) => `<label class="target-check muted"><input type="checkbox" checked disabled> ${esc(t.label)} · đã đăng</label>`).join("")}
-      ${schedTargets.filter((t) => !schedDone.has(t.key)).map((t) => `<label class="target-check"><input type="checkbox" data-fb-place="${t.key}" checked> ${esc(t.label)}</label>`).join("")}
+      ${schedTargets.filter((t) => schedLock.pending.has(t.key)).map((t) => `<label class="target-check muted"><input type="checkbox" disabled> ${esc(t.label)} · đang chờ đăng</label>`).join("")}
+      ${schedTargets.filter((t) => !schedLock.locked.has(t.key)).map((t) => `<label class="target-check"><input type="checkbox" data-fb-place="${t.key}" checked> ${esc(t.label)}</label>`).join("")}
     </div>` : "";
   openModal(`
     <h3>🕐 Đặt lịch đăng</h3>
@@ -1337,7 +1366,7 @@ function notificationRow(item) {
   const icons = {
     review_pending: "⏳", rejected: "↩️", revision_requested: "✏️",
     draft_ready: "📄", published: "✅", retracted: "🗑",
-    daily_summary: "🌆",
+    daily_summary: "🌆", publish_failed: "⚠️",
   };
   return `<button class="card notification ${item.read ? "" : "unread"}" data-notification="${esc(item.key)}" data-code="${esc(item.task_code || "")}">
     <span class="dot"></span>

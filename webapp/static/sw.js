@@ -7,12 +7,12 @@
    Other static assets (icons, manifest) stay cache-first.
    skipWaiting + clients.claim make a new worker take over at once;
    app.js reloads the page once when control changes hands. */
-const CACHE = "giao-viec-iaict-v9";
+const CACHE = "giao-viec-iaict-v10";
 /* index.html references the shell assets with a ?v=<release> query:
    Cloudflare's edge once kept serving a stale /app.js under its
    plain URL (default TTL) even after the origin had the new file. */
 const SHELL = [
-  "/", "/index.html", "/app.js?v=0.5.1", "/styles.css?v=0.5.1",
+  "/", "/index.html", "/app.js?v=0.5.2", "/styles.css?v=0.5.2",
   "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png",
 ];
 const SHELL_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css"]);
@@ -73,6 +73,25 @@ self.addEventListener("push", (event) => {
       data: { url: data.url || "/" },
     })
   );
+  // TD-0015: best-effort home-screen badge while the app is closed.
+  // The push payload carries no unread count, so fetch it (same
+  // origin, session cookie included); anything failing is ignored.
+  // Guarded: browsers without the Badging API skip this silently
+  // (notably iOS, which has no Badging API at all).
+  if ("setAppBadge" in self.navigator) {
+    event.waitUntil(
+      fetch("/api/notifications")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          if (d.unread) return self.navigator.setAppBadge(d.unread);
+          if ("clearAppBadge" in self.navigator) {
+            return self.navigator.clearAppBadge();
+          }
+        })
+        .catch(() => {})
+    );
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {

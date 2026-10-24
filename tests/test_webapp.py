@@ -598,20 +598,32 @@ class WebAppTestCase(unittest.TestCase):
         # đăng Facebook (modal checkbox, endpoint facebook-targets).
         # TD-0014: bản 0.5.1 — version nhất quán + dải chip nổi bật,
         # nút thu gọn danh sách, ngắt link dài trong thông báo.
+        # TD-0015: bản 0.5.2 — version nhất quán + khóa nơi đang chờ,
+        # badge PWA, icon xem thêm, chú thích tải muộn.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.1")
+        self.assertEqual(data["version"], "0.5.2")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.1", html)
+        self.assertIn("?v=0.5.2", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.1", js)
+        self.assertIn("0.5.2", js)
         self.assertIn("fab-circle", js)
+        # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
+        # thích tải muộn, icon cảnh báo đăng lỗi.
+        self.assertIn("fbLockedPlaces", js)
+        self.assertIn("đang chờ đăng", js)
+        self.assertIn("setAppBadge", js)
+        self.assertIn("clearAppBadge", js)
+        self.assertIn("•••", js)
+        self.assertNotIn("▦", js)
+        self.assertIn("Muse chưa được báo", js)
+        self.assertIn("publish_failed", js)
         # TD-0014: dải chip bọc + nút thu gọn danh sách (nhớ localStorage).
         self.assertIn("statusChipsWrap", js)
         self.assertIn("has-more", js)
@@ -656,8 +668,125 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn(".notification .row-main{overflow-wrap:anywhere}", css)
         self.assertIn(".notification .muted{overflow-wrap:anywhere}", css)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v9", raw)
-        self.assertIn(b"app.js?v=0.5.1", raw)
+        self.assertIn(b"giao-viec-iaict-v10", raw)
+        self.assertIn(b"app.js?v=0.5.2", raw)
+        self.assertIn(b"setAppBadge", raw)
+
+    # ------------------------------------------------ TD-0015: lock
+    # pending places, legacy links, late uploads
+
+    def test_fb_publish_locked_places_blocked_and_partial(self):
+        admin = self.login("admin")
+        # Live request for both places: publishing both again is a
+        # 409 naming the locked places (the CV-0014 duplicate).
+        _task, out = self.make_output("writer", "facebook",
+                                      status="APPROVED_WAITING")
+        self.store.set_output_fb_request(
+            out["id"], ["profile", "page_61595515900524"])
+        status, data, _ = self.action(
+            admin, out["id"], "publish",
+            {"targets": ["profile", "page_61595515900524"]})
+        self.assertEqual(status, 409, data)
+        self.assertIn("đang chờ", json.dumps(data, ensure_ascii=False))
+        # Mixed request: the locked place is skipped, the open one
+        # is recorded, and the message says what was skipped.
+        _task2, out2 = self.make_output("writer", "facebook",
+                                        status="APPROVED_WAITING")
+        self.store.set_output_fb_request(out2["id"], ["profile"])
+        status, data, _ = self.action(
+            admin, out2["id"], "publish",
+            {"targets": ["profile", "page_61595515900524"]})
+        self.assertEqual(status, 200, data)
+        st = self.store.fb_state(self.store.get_output(out2["id"]))
+        self.assertEqual(st["request"], ["page_61595515900524"])
+        self.assertIn("bỏ qua", data.get("message", ""))
+        # Abort drops the recorded request, unlocking the places.
+        _task3, out3 = self.make_output("writer", "facebook",
+                                        status="APPROVED_WAITING")
+        status, data, _ = self.action(
+            admin, out3["id"], "publish", {"targets": ["profile"]})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(
+            self.store.get_output(out3["id"])["publish_targets"],
+            '["profile"]')
+        status, data, _ = self.action(admin, out3["id"], "publish-abort")
+        self.assertEqual(status, 200, data)
+        self.assertIsNone(
+            self.store.get_output(out3["id"])["publish_targets"])
+
+    def test_fb_legacy_link_from_audit(self):
+        admin = self.login("admin")
+        task, out = self.make_output("writer", "facebook")
+        self.store.set_output_public_url(out["id"],
+                                         "https://fb.example/old")
+        self.store.audit(None, "publish_requested", "output", out["id"],
+                         detail=f"task={task['code']} channel=facebook "
+                                "target=profile")
+        status, detail, _ = self.req("GET", f"/api/tasks/{task['code']}",
+                                     token=admin)
+        self.assertEqual(status, 200, detail)
+        fb = [o for o in detail["outputs"]
+              if o["channel"] == "facebook"][0]
+        self.assertEqual(fb["fb_state"]["urls"],
+                         {"profile": "https://fb.example/old"})
+        # No usable audit target: generic "Facebook" display key.
+        task2, out2 = self.make_output("writer", "facebook")
+        self.store.set_output_public_url(out2["id"],
+                                         "https://fb.example/old2")
+        status, detail2, _ = self.req("GET", f"/api/tasks/{task2['code']}",
+                                      token=admin)
+        self.assertEqual(status, 200, detail2)
+        fb2 = [o for o in detail2["outputs"]
+               if o["channel"] == "facebook"][0]
+        self.assertEqual(fb2["fb_state"]["urls"],
+                         {"legacy": "https://fb.example/old2"})
+
+    def test_late_upload_notifies_reviewers_only_with_outputs(self):
+        import time
+        writer = self.login("writer")
+
+        calls = []
+
+        class FakePush:
+            def notify_users(self, ids, title, body, url="/"):
+                calls.append((list(ids), title, body))
+
+        old_push = self.app.push
+        self.app.push = FakePush()
+        try:
+            # Task WITH channel cards: reviewers/Admins get pushed.
+            task, _out = self.make_output("writer", "facebook")
+            body, content_type = self.multipart(
+                [("task_code", task["code"])],
+                [("files", "muon.txt", b"tu lieu muon")])
+            status, raw, _ = self.req_bytes(
+                "POST", "/api/uploads", body=body, token=writer,
+                headers={"Content-Type": content_type})
+            self.assertEqual(status, 201, raw)
+            deadline = time.time() + 2
+            while not calls and time.time() < deadline:
+                time.sleep(0.05)
+            self.assertTrue(calls, "no push notification recorded")
+            ids, title, body_text = calls[0]
+            self.assertIn(self.user_ids["admin"], ids)
+            self.assertNotIn(self.user_ids["writer"], ids)
+            self.assertIn("tư liệu", title + body_text)
+            # Task WITHOUT channel cards: no notification.
+            calls.clear()
+            bare = self.store.create_task(
+                self.user_ids["writer"], roles.ROLE_WRITER,
+                "Việc chưa có thẻ kênh", [], ["facebook"])
+            body, content_type = self.multipart(
+                [("task_code", bare["code"])],
+                [("files", "som.txt", b"tu lieu som")])
+            status, raw, _ = self.req_bytes(
+                "POST", "/api/uploads", body=body, token=writer,
+                headers={"Content-Type": content_type})
+            self.assertEqual(status, 201, raw)
+            time.sleep(0.3)
+            self.assertEqual(calls, [])
+        finally:
+            self.app.push = old_push
 
     # ------------------------------------------------ GĐ2: uploads/files
     def test_upload_create_task_files_download_and_range(self):

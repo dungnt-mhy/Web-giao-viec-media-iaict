@@ -405,6 +405,71 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0015 — Sửa 6 việc: khóa nơi đang chờ đăng, link Facebook kiểu cũ, thông báo web khi đăng/thu hồi qua botctl, badge PWA, icon xem thêm, tải thêm tư liệu muộn (bản 0.5.2)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (phản hồi sau 0.5.1:
+  chọn đăng rồi thì nơi đó phải khóa — bằng chứng CV-0014 có 2
+  audit publish_requested giống nhau cho profile; web không hiện
+  link bài Facebook đã đăng kiểu cũ; web không có thông báo khi
+  đăng/thu hồi qua botctl; không hiện badge ở icon khi ghim web ra
+  màn chính; đổi icon xem thêm ở menu trang chính; thêm tư liệu
+  sau khi gửi Muse thì có tác dụng gì).
+- Nội dung thay đổi:
+  (1) Khóa nơi đang chờ: tập khóa = nơi đã đăng xong ∪ (tập lệnh
+  đang chờ − nơi đã đăng − nơi đăng lỗi); nơi đang chờ hiện
+  disabled "· đang chờ đăng", nơi lỗi vẫn chọn được để đăng lại.
+  Áp cho modal Đăng ngay + Đặt lịch (webapp) và màn chọn bot.
+  Bất biến đã xác minh trước khi code: nơi lỗi vẫn nằm trong
+  publish_targets (mark_fb_place_failed không dọn tập lệnh) nên
+  "đang chờ" phải tính request − done − failed. Phân biệt lịch
+  chờ giờ (scheduled_at còn → không khóa, để sửa lịch được) với
+  lệnh đăng đang chạy (scheduled_at rỗng). Hủy đăng (webapp
+  publish-abort + bot publish abort) nay dọn publish_targets để
+  lệnh đã hủy không khóa oan vĩnh viễn. Server chặn: lệnh đăng mà
+  toàn bộ nơi chọn đều đã khóa thì từ chối 409 kèm tên nơi bị
+  khóa; chọn lẫn nơi khóa + nơi mở thì chỉ đăng nơi mở và báo rõ
+  nơi bị bỏ qua; không chặn đăng lại nơi lỗi.
+  (2) Link kiểu cũ: đầu ra PUBLISHED/RETRACTED có public_url nhưng
+  publish_target NULL (CV-0012/0013/0014) nay hiện link: fb_state
+  suy ra nơi đăng từ audit publish_requested gần nhất (targets=
+  rồi target=); không có target trong audit thì dùng key "legacy"
+  hiển thị "Facebook". Key "legacy" chỉ để hiển thị, không lọt
+  vào danh sách done của modal (modal lọc theo nơi hợp lệ).
+  (3) Thông báo web khi botctl đăng/thu hồi: set-output-published
+  (kể cả --place), set-output-place-failed, set-output-retracted
+  (kể cả --place) đồng thời ghi hàng web_notification_items
+  (INSERT OR IGNORE, key theo mẫu published:/publish_failed:/
+  retracted: + id đầu ra + id audit) kèm link từng nơi;
+  --no-notify tắt cả Telegram lẫn web. Lưu ý: bảng này là global
+  (mọi người dùng đều thấy, như dòng tổng kết ngày) nên hàng mới
+  tới được người tạo + người duyệt/Admin (và cả người dùng khác);
+  người tạo có thể thấy trùng với dòng suy ra từ trạng thái (dòng
+  global mang link từng nơi, dòng suy ra chỉ mang link đầu tiên).
+  (4) Badge PWA: đồng bộ navigator.setAppBadge(số chưa đọc) mỗi
+  khi tải/làm mới hộp thông báo, xóa badge khi đã đọc hết; chỉ
+  gọi khi API hỗ trợ. Service worker cũng đồng bộ badge khi nhận
+  push (fetch số chưa đọc, best-effort). Giới hạn: iOS không hỗ
+  trợ Badging API nên badge chỉ chạy trên Android/Chrome (và
+  Chrome desktop).
+  (5) Icon xem thêm: nút "Thêm" ở thanh dưới đổi từ ▦ sang •••
+  (duy nhất một chỗ dùng ▦).
+  (6) Tải thêm tư liệu muộn: form tải thêm hiện chú thích khi việc
+  đã có thẻ kênh (tư liệu mới chỉ gắn vào việc, Muse chưa được
+  báo — nhắn Muse nếu muốn dùng); khi thêm file vào việc đã có
+  thẻ kênh thì gửi thông báo đẩy web cho người duyệt/Admin (kể
+  cả Admin) qua _notify_async. Giữ nguyên phân quyền (chỉ người
+  tạo/Admin) và không đổi trạng thái việc.
+  (7) Bản app 0.5.1 → 0.5.2 (VERSION, APP_VERSION, ?v=0.5.2, SW
+  cache v10, dòng phiên bản trong app).
+- Ảnh hưởng: webapp + bot (storage/botctl dùng chung); không đổi
+  phân quyền, luồng duyệt, đường đăng trình duyệt. Kiểm thử:
+  webapp 57/57 (54 cũ + 3 mới), bot 242/242 (230 cũ + 4 mới × 3 lớp
+  test); probe trên bản sao DB thật đạt (link legacy CV-0013,
+  khóa đúng, hàng web botctl, hủy dọn request; sha DB thật không
+  đổi); health local + public 0.5.2, đủ 5 service active.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

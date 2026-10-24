@@ -641,6 +641,21 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.audit(
             user["telegram_id"], "upload_files", "task", code,
             detail=f"files={len(saved)} via=webapp")
+        if self.app.store.list_outputs(code):
+            # TD-0015: late files on a task that already has channel
+            # cards are only attached to the task — Muse is NOT told
+            # and the task state does not change. Push reviewers and
+            # Admins so the team knows to tell Muse.
+            recipients = [u for u in dict.fromkeys(
+                self._reviewer_ids(exclude=user["telegram_id"])
+                + self._admin_ids())
+                if u != user["telegram_id"]]
+            self._notify_async(
+                recipients,
+                f"📎 {code} vừa thêm tư liệu",
+                f"{code} · {len(saved)} file mới — tư liệu mới chỉ "
+                "gắn vào việc, nhắn Muse nếu muốn dùng.",
+                f"/?task={code}")
         task = self.app.store.get_task(code)
         self._send_json(HTTPStatus.CREATED,
                         {"files": self._task_files(task)})
@@ -1153,6 +1168,28 @@ class Handler(BaseHTTPRequestHandler):
             if output["pending_choice"]:
                 raise ApiError(HTTPStatus.CONFLICT,
                                "Lệnh đăng đang được xử lý.")
+        skipped_note = ""
+        if targets:
+            # TD-0015 defense in depth (the modal already locks
+            # these): refuse a request whose every place is locked
+            # (done or live-requested); a mixed request goes ahead
+            # for its unlocked places and says which were skipped.
+            # Failed places are never locked, so retrying them
+            # always passes.
+            locked, _pending = self.app.store.fb_locked_places(output)
+            locked_sel = [t for t in targets if t in locked]
+            if len(locked_sel) == len(targets):
+                names = ", ".join(self.app.store.fb_place_short(k)
+                                  for k in locked_sel)
+                raise ApiError(
+                    HTTPStatus.CONFLICT,
+                    f"Không đăng lại được {names}: nơi này đã đăng "
+                    "xong hoặc đang chờ Muse đăng.")
+            if locked_sel:
+                skipped = ", ".join(self.app.store.fb_place_short(k)
+                                    for k in locked_sel)
+                skipped_note = f" (bỏ qua nơi đang khóa: {skipped})"
+                targets = [t for t in targets if t not in locked]
         if output["scheduled_at"]:
             self.app.store.set_output_schedule(output["id"], None, None)
         self.app.store.set_output_pending_choice(output["id"], True)
@@ -1177,7 +1214,8 @@ class Handler(BaseHTTPRequestHandler):
             "🚀 Có lệnh đăng mới", body_text, f"/?task={task['code']}")
         if targets:
             message = (f"Đã nhận lệnh đăng lên {len(targets)} nơi — "
-                       "Muse sẽ đăng ngay và gửi link bài khi xong.")
+                       "Muse sẽ đăng ngay và gửi link bài khi xong."
+                       f"{skipped_note}")
         else:
             message = ("Đã nhận lệnh đăng — Muse sẽ đăng ngay và gửi "
                        "link bài khi xong.")
@@ -1195,6 +1233,9 @@ class Handler(BaseHTTPRequestHandler):
                    "stage=target_choice via=webapp")
         self.app.store.set_output_fb_pending(output["id"], None)
         self.app.store.set_output_pending_choice(output["id"], False)
+        # TD-0015: dropping the recorded request, so an aborted
+        # request can never lock its places forever.
+        self.app.store.clear_fb_request(output["id"])
         self._done(output["id"], "Đã hủy lệnh đăng.")
 
     @staticmethod
@@ -1332,6 +1373,25 @@ class Handler(BaseHTTPRequestHandler):
                 or body.get("targets") is not None:
             raise ApiError(HTTPStatus.BAD_REQUEST,
                            "Kênh này không có nơi đăng để chọn.")
+        skipped_note = ""
+        if targets:
+            # TD-0015: same lock as publish (a live publish request
+            # must not be re-scheduled); an already-scheduled
+            # output is NOT locked, so rescheduling keeps working.
+            locked, _pending = self.app.store.fb_locked_places(output)
+            locked_sel = [t for t in targets if t in locked]
+            if len(locked_sel) == len(targets):
+                names = ", ".join(self.app.store.fb_place_short(k)
+                                  for k in locked_sel)
+                raise ApiError(
+                    HTTPStatus.CONFLICT,
+                    f"Không đặt lịch lại được {names}: nơi này đã "
+                    "đăng xong hoặc đang chờ Muse đăng.")
+            if locked_sel:
+                skipped = ", ".join(self.app.store.fb_place_short(k)
+                                    for k in locked_sel)
+                skipped_note = f" (bỏ qua nơi đang khóa: {skipped})"
+                targets = [t for t in targets if t not in locked]
         when = self._parse_schedule_body(body)
         if when is None:
             self.app.store.set_output_pending_choice(output["id"], True)
@@ -1363,7 +1423,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"{storage.channel_label(output['channel'])} · "
                 f"{when.strftime('%H:%M %d/%m/%Y')}",
                 f"/?task={task['code']}")
-        self._done(output["id"], "Đã đặt lịch đăng.",
+        self._done(output["id"], f"Đã đặt lịch đăng.{skipped_note}",
                    extra={"warnings": warnings, "scheduled_at": when_utc,
                           "targets": targets})
 
