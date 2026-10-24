@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.5.0";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -760,6 +760,69 @@ function outputActions(output, task) {
   return actions;
 }
 
+let fbTargetsCache = null;
+async function fbTargets() {
+  if (fbTargetsCache) return fbTargetsCache;
+  try {
+    const data = await api("/api/facebook-targets");
+    fbTargetsCache = data.targets || [];
+  } catch {
+    fbTargetsCache = [];
+  }
+  return fbTargetsCache;
+}
+
+function fbPlaceShort(output, key) {
+  const place = (output.fb_places || []).find((p) => p.key === key);
+  if (place) return place.short;
+  if (key === "profile") return "Trang cá nhân";
+  if (key && key.startsWith("page_")) return `Fanpage ${key.slice(5)}`;
+  return key;
+}
+
+function fbScheduleSuffix(output) {
+  if (output.channel !== "facebook") return "";
+  const st = output.fb_state;
+  if (st && (st.target_set || []).length) {
+    return ` · ${esc(st.target_set.map((k) => fbPlaceShort(output, k)).join(", "))}`;
+  }
+  if (st && (st.request || []).length) {
+    return ` · ${esc(st.request.map((k) => fbPlaceShort(output, k)).join(", "))}`;
+  }
+  if (output.publish_target === "page") {
+    return ` · ${esc(fbPlaceShort(output, "page_61595515900524"))}`;
+  }
+  if (output.publish_target === "profile") return " · Trang cá nhân";
+  return "";
+}
+
+function fbMetaLines(output) {
+  if (output.channel !== "facebook" || !output.fb_state) return "";
+  const st = output.fb_state;
+  const urls = st.urls || {};
+  let html = "";
+  for (const key of (st.done || [])) {
+    const url = urls[key];
+    const short = esc(fbPlaceShort(output, key));
+    if (output.status === "RETRACTED") {
+      html += `<p class="meta-line">🔗 ${short} · đã xóa: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>`;
+    } else if (output.status === "PUBLISHED") {
+      html += `<p class="meta-line">🔗 ${short}: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>`;
+    } else {
+      html += `<p class="meta-line">🔗 ${short} · đã đăng: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>`;
+    }
+  }
+  if (!Object.keys(urls).length && (st.target_set || []).length) {
+    html += `<p class="meta-line">📘 Nơi đăng: ${esc(st.target_set.map((k) => fbPlaceShort(output, k)).join(", "))}</p>`;
+  }
+  for (const key of (st.failed || [])) {
+    if (!urls[key]) {
+      html += `<p class="meta-line">⚠️ ${esc(fbPlaceShort(output, key))}: đăng lỗi — đăng lại chỉ đăng nơi chưa xong</p>`;
+    }
+  }
+  return html;
+}
+
 function outputCard(output, task) {
   const meta = CHANNEL_MAP[output.channel] || { icon: "📄", name: output.channel, kind: "" };
   const creatorName = output.creator_name || task.creator_name || task.creator_id || "";
@@ -789,8 +852,8 @@ function outputCard(output, task) {
         <p class="meta-line">👤 ${esc(creatorName)} · ${fmtTime(output.created_at)}</p>
         <p class="meta-line">💡 ${esc(task.hint || output.task_hint || "(không có gợi ý)")}</p>
         ${draft}
-        ${output.scheduled_at ? `<p class="meta-line">🕐 Lịch đăng: <span class="sched-time">${fmtTime(output.scheduled_at)}</span>${output.publish_target ? ` · ${output.publish_target === "page" ? "Fanpage Minhy" : "Trang cá nhân"}` : ""}</p>` : ""}
-        ${output.public_url ? `<p class="meta-line">🔗 ${output.status === "RETRACTED" ? "Bài đã xóa" : "Đã đăng"}: <a href="${esc(output.public_url)}" target="_blank" rel="noopener">${esc(output.public_url)}</a></p>` : ""}
+        ${output.scheduled_at ? `<p class="meta-line">🕐 Lịch đăng: <span class="sched-time">${fmtTime(output.scheduled_at)}</span>${fbScheduleSuffix(output)}</p>` : ""}
+        ${output.channel === "facebook" && output.fb_state ? fbMetaLines(output) : (output.public_url ? `<p class="meta-line">🔗 ${output.status === "RETRACTED" ? "Bài đã xóa" : "Đã đăng"}: <a href="${esc(output.public_url)}" target="_blank" rel="noopener">${esc(output.public_url)}</a></p>` : "")}
         ${output.status === "REJECTED" && output.reject_reason ? `<p class="meta-line">✏️ Yêu cầu chỉnh sửa: ${esc(output.reject_reason)}</p>` : ""}
         ${output.pending_choice ? `<p class="meta-line">⏳ Đang có lựa chọn/lệnh chưa hoàn tất — các nút khác tạm ẩn.</p>` : ""}
       </div>
@@ -907,27 +970,44 @@ async function handleOutputAction(id, action, reload) {
 }
 
 async function publishFlow(id, reload, alreadyPending = false) {
-  // Facebook needs its target chosen in this UI (owner's rule).
+  // Facebook needs its places chosen in this UI (owner's rule).
   const detail = state.route === "detail" ? await api(`/api/tasks/${state.taskCode}`).catch(() => null) : null;
   const output = detail?.outputs.find((o) => o.id === id);
   if (output && output.channel !== "facebook") {
     const data = await callOutput(id, "publish", {});
     toast(`✅ ${data.message}`); await reload(); return;
   }
+  const targets = await fbTargets();
+  const done = new Set(Object.keys(output?.fb_state?.urls || {}));
+  const available = targets.filter((t) => !done.has(t.key));
+  const doneLines = targets.filter((t) => done.has(t.key)).map((t) => `
+    <label class="target-check muted"><input type="checkbox" checked disabled> ${esc(t.label)} · đã đăng</label>`).join("");
+  const checks = available.map((t) => `
+    <label class="target-check"><input type="checkbox" data-fb-place="${t.key}" checked> ${esc(t.label)}</label>`).join("");
   openModal(`
     <h3>📘 Chọn nơi đăng Facebook</h3>
-    <p class="muted">Nơi đăng được chốt ngay tại đây, lệnh đăng sẽ ghi kèm lựa chọn này.</p>
-    <div class="target-grid">
-      <button class="target-choice" data-target="profile">👤 Trang cá nhân<br><small class="muted">Nguyễn Trọng Minh Huy</small></button>
-      <button class="target-choice" data-target="page">📄 Fanpage Minhy</button>
-    </div>
-    <div class="modal-actions"><button class="btn btn-danger" data-abort>🗑 Hủy đăng</button></div>`);
-  $$("[data-target]").forEach((btn) => btn.addEventListener("click", async () => {
+    <p class="muted">Chọn một hoặc nhiều nơi; lệnh đăng sẽ ghi kèm lựa chọn này. Nơi đã đăng xong không đăng lại.</p>
+    <div class="target-grid">${doneLines}${checks}</div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" data-abort>🗑 Hủy đăng</button>
+      <button class="btn btn-primary" data-confirm>🚀 Đăng lên ${available.length} nơi</button>
+    </div>`);
+  const updateConfirm = () => {
+    const n = $$("[data-fb-place]:checked").length;
+    const btn = $("[data-confirm]");
+    btn.textContent = `🚀 Đăng lên ${n} nơi`;
+    btn.disabled = n === 0;
+  };
+  $$("[data-fb-place]").forEach((box) => box.addEventListener("change", updateConfirm));
+  updateConfirm();
+  $("[data-confirm]").addEventListener("click", async () => {
+    const selected = $$("[data-fb-place]:checked").map((box) => box.dataset.fbPlace);
+    if (!selected.length) { toast("Hãy chọn ít nhất 1 nơi đăng.", true); return; }
     try {
-      const data = await callOutput(id, "publish", { target: btn.dataset.target });
+      const data = await callOutput(id, "publish", { targets: selected });
       closeModal(); toast(`✅ ${data.message}`); await reload(); refreshBadge();
     } catch (err) { toast(err.message, true); }
-  }));
+  });
   $("[data-abort]").addEventListener("click", async () => {
     if (alreadyPending || output?.pending_choice) {
       try { await callOutput(id, "publish-abort", {}); } catch (err) { toast(err.message, true); return; }
@@ -940,10 +1020,17 @@ async function scheduleFlow(id, reload, alreadyPending = false) {
   const detail = state.route === "detail" ? await api(`/api/tasks/${state.taskCode}`).catch(() => null) : null;
   const output = detail?.outputs.find((o) => o.id === id);
   const isFacebook = output?.channel === "facebook";
+  const schedTargets = isFacebook ? await fbTargets() : [];
+  const schedDone = new Set(Object.keys(output?.fb_state?.urls || {}));
+  const schedChecks = isFacebook ? `
+    <p class="muted">📘 Nơi đăng Facebook — chọn một hoặc nhiều nơi.</p>
+    <div class="target-grid">
+      ${schedTargets.filter((t) => schedDone.has(t.key)).map((t) => `<label class="target-check muted"><input type="checkbox" checked disabled> ${esc(t.label)} · đã đăng</label>`).join("")}
+      ${schedTargets.filter((t) => !schedDone.has(t.key)).map((t) => `<label class="target-check"><input type="checkbox" data-fb-place="${t.key}" checked> ${esc(t.label)}</label>`).join("")}
+    </div>` : "";
   openModal(`
     <h3>🕐 Đặt lịch đăng</h3>
-    ${isFacebook ? `<label class="field">📘 Nơi đăng Facebook
-      <select id="schedTarget"><option value="">— Chọn nơi đăng —</option><option value="profile">👤 Trang cá nhân</option><option value="page">📄 Fanpage Minhy</option></select></label>` : ""}
+    ${schedChecks}
     <div class="target-grid">
       <button class="target-choice" data-preset="60">⏱ Sau 1 giờ</button>
       <button class="target-choice" data-preset="120">⏱ Sau 2 giờ</button>
@@ -958,9 +1045,9 @@ async function scheduleFlow(id, reload, alreadyPending = false) {
     </div>`);
   const submit = async (body) => {
     if (isFacebook) {
-      const target = $("#schedTarget").value;
-      if (!target) { toast("Hãy chọn nơi đăng Facebook trước.", true); return; }
-      body.target = target;
+      const selected = $$("[data-fb-place]:checked").map((box) => box.dataset.fbPlace);
+      if (!selected.length) { toast("Hãy chọn nơi đăng Facebook trước.", true); return; }
+      body.targets = selected;
     }
     try {
       const data = await callOutput(id, "schedule", body);

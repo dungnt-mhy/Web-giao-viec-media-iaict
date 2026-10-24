@@ -594,20 +594,25 @@ class WebAppTestCase(unittest.TestCase):
         # TD-0011: nav mới, wizard footer mới, collapse, dark mode.
         # TD-0012: bản 0.4.1 — version nhất quán + sửa nav (nút + to
         # hơn, bớt nhô; mục đang chọn nền trong suốt, không che chữ).
+        # TD-0013: bản 0.5.0 — version nhất quán + chọn nhiều nơi
+        # đăng Facebook (modal checkbox, endpoint facebook-targets).
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.4.1")
+        self.assertEqual(data["version"], "0.5.0")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.4.1", html)
+        self.assertIn("?v=0.5.0", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.4.1", js)
+        self.assertIn("0.5.0", js)
         self.assertIn("fab-circle", js)
+        self.assertIn("facebook-targets", js)
+        self.assertIn("data-fb-place", js)
+        self.assertIn("Đăng lên", js)
         self.assertIn("data-review-badge", js)
         self.assertIn("day-group", js)
         self.assertIn("sidebar-collapsed", js)
@@ -622,6 +627,7 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", css)
         self.assertIn("fab-circle", css)
         self.assertIn("more-sheet", css)
+        self.assertIn("target-check", css)
         # TD-0012: nút + 58px (52px ở màn ≤340px), nhô ~7px; mục
         # đang chọn ở thanh dưới nền trong suốt (không rò nền tối
         # của sidebar làm chìm chữ).
@@ -631,8 +637,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn(".bottom-nav .nav-btn.active{color:var(--teal-dark);"
                       "font-weight:800;background:transparent}", css)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v7", raw)
-        self.assertIn(b"app.js?v=0.4.1", raw)
+        self.assertIn(b"giao-viec-iaict-v8", raw)
+        self.assertIn(b"app.js?v=0.5.0", raw)
 
     # ------------------------------------------------ GĐ2: uploads/files
     def test_upload_create_task_files_download_and_range(self):
@@ -817,9 +823,63 @@ class WebAppTestCase(unittest.TestCase):
         entries = self.audits_for("publish_requested", output["id"])
         self.assertTrue(any("target=page" in (e["detail"] or "")
                             for e in entries))
+        # TD-0013: the legacy single target also lands in the
+        # multi-place request set.
+        self.assertTrue(any("targets=page_61595515900524" in (e["detail"] or "")
+                            for e in entries))
         status, _d, _ = self.action(
             admin, output["id"], "publish", {"target": "khac"})
         self.assertIn(status, (400, 409))
+
+    def test_facebook_publish_multi_targets(self):
+        # TD-0013: publish + schedule accept a targets list; the
+        # request set is stored and the legacy single column keeps
+        # the first place; the targets endpoint lists live places.
+        import json
+        admin = self.login("admin")
+        _task, output = self.make_output("admin", "facebook")
+        status, data, _ = self.action(
+            admin, output["id"], "publish", {})
+        self.assertEqual(status, 422, data)
+        self.assertEqual(data["code"], "target_required")
+        self.assertEqual([t["key"] for t in data["targets"]],
+                         ["profile", "page_61595515900524"])
+        status, data, _ = self.action(
+            admin, output["id"], "publish",
+            {"targets": ["profile", "page_61595515900524"]})
+        self.assertEqual(status, 200, data)
+        row = self.store.get_output(output["id"])
+        self.assertEqual(json.loads(row["publish_targets"]),
+                         ["profile", "page_61595515900524"])
+        self.assertEqual(json.loads(row["fb_target_set"]),
+                         ["profile", "page_61595515900524"])
+        entries = self.audits_for("publish_requested", output["id"])
+        self.assertTrue(any("targets=profile,page_61595515900524"
+                            in (e["detail"] or "") for e in entries))
+        # Empty / unknown target lists are rejected.
+        _t2, out2 = self.make_output("admin", "facebook")
+        status, _d, _ = self.action(
+            admin, out2["id"], "publish", {"targets": []})
+        self.assertIn(status, (400, 409))
+        status, _d, _ = self.action(
+            admin, out2["id"], "publish", {"targets": ["bogus"]})
+        self.assertIn(status, (400, 409))
+        # Schedule with a targets list stores the set + legacy first.
+        _t3, fb = self.make_output("admin", "facebook")
+        status, data, _ = self.action(
+            admin, fb["id"], "schedule",
+            {"preset": "60", "targets": ["page_61595515900524"]})
+        self.assertEqual(status, 200, data)
+        row = self.store.get_output(fb["id"])
+        self.assertEqual(json.loads(row["publish_targets"]),
+                         ["page_61595515900524"])
+        self.assertEqual(row["publish_target"], "page")
+        # Targets endpoint (used by both modals).
+        status, data, _ = self.req("GET", "/api/facebook-targets",
+                                   token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual([t["key"] for t in data["targets"]],
+                         ["profile", "page_61595515900524"])
 
     def test_schedule_unschedule_and_close_warning(self):
         admin = self.login("admin")

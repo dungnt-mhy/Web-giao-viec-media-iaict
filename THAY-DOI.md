@@ -296,6 +296,69 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0013 — Đăng Facebook nhiều nơi cùng lúc, sẵn sàng nhiều Fanpage (bản 0.5.0)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án ("khi chọn đăng trên
+  trang cá nhân hay fanpage thì chỉ được 1; tôi muốn đăng cả 2 nơi,
+  sau này còn chọn fanpage (nhiều fanpage) để đăng").
+- Vấn đề cũ: mỗi lần đăng Facebook chỉ chọn được ĐÚNG 1 nơi (trang
+  cá nhân HOẶC Fanpage Minhy); danh sách nơi đăng gắn cứng 2 mục
+  trong code (bot `FB_PUBLISH_TARGETS`, webapp `FB_TARGETS`); target
+  của đăng ngay chỉ nằm trong audit, target của đặt lịch chỉ là 1
+  cột `publish_target` đơn; link chỉ có 1 `public_url` đơn.
+- Nội dung thay đổi:
+  (1) Mô hình target thành DANH SÁCH: một đầu ra Facebook mang một
+  tập hợp các nơi đăng, mỗi nơi có link bài đã đăng riêng. Khóa nơi
+  đăng: `profile` (trang cá nhân, cố định 1 mục) và
+  `page_<fb_page_id>` (mỗi Fanpage một khóa). Danh sách nơi đăng lấy
+  từ dữ liệu: trang cá nhân + bảng mới `facebook_pages` (seed sẵn
+  đúng 1 dòng: Minhy, id 61595515900524). Về sau thêm Fanpage chỉ
+  cần thêm dòng vào bảng này (chưa có màn hình quản lý Fanpage
+  trong đợt này).
+  (2) Cột mới trên outputs (JSON, cộng thêm, không phá dữ liệu cũ):
+  `publish_targets` (tập hợp của lệnh đăng/lịch gần nhất),
+  `fb_target_set` (tập hợp đầy đủ, đóng băng khi đã có nơi đăng
+  xong), `fb_place_urls` (link từng nơi), `fb_place_failed` (nơi
+  đăng lỗi), `fb_place_retracted` (nơi đã xoá khi thu hồi),
+  `fb_pending_targets` (lựa chọn đang bật/tắt dở trên bot).
+  Tương thích ngược: target đơn cũ (`publish_target` = profile/page)
+  được hiểu như danh sách 1 phần tử; đầu ra đã PUBLISHED với
+  `public_url` đơn cũ được hiểu như đã đăng xong 1 nơi.
+  (3) Giao diện chọn nhiều ở CẢ bot lẫn webapp: bot đổi màn chọn
+  nơi đăng thành nút bật/tắt từng nơi (đang chọn hiện ✅, chạm để
+  bỏ chọn thành ❌ như quy ước nút kênh; nơi đã đăng xong hiện
+  "đã đăng", chạm chỉ báo chứ không chọn lại), mặc định chọn sẵn
+  tất cả nơi chưa đăng, thêm nút xác nhận "Đăng lên N nơi" (bot) /
+  checkbox + nút xác nhận tương tự (webapp); bắt buộc chọn ít nhất
+  1 nơi mới cho xác nhận; nút Hủy giữ nguyên hành vi cũ.
+  (4) Đăng: một lần bấm Đăng đăng lần lượt tới từng nơi đã chọn
+  (giữ nguyên đường đăng trình duyệt của Muse). Ghi nhận link theo
+  từng nơi (botctl `set-output-published --place`).
+  (5) Thất bại từng phần: chỉ lật PUBLISHED khi TẤT CẢ nơi trong
+  tập hợp đều đăng thành công (giữ nguyên quy tắc: nút Đăng chỉ ghi
+  lệnh, trạng thái chỉ lật khi Muse đăng thật + gắn link). Nơi thất
+  bại được ghi nhận (botctl `set-output-place-failed`) và báo rõ
+  từng nơi thành công/thất bại; đầu ra ở lại chờ đăng với link của
+  nơi đã xong được giữ lại; lần đăng lại chỉ đăng tiếp các nơi chưa
+  xong (không đăng trùng nơi đã xong).
+  (6) Thu hồi: thu hồi Facebook phải XOÁ THẬT ở TẤT CẢ các nơi đã
+  đăng thành công, kiểm chứng từng nơi biến mất rồi mới lật
+  RETRACTED (botctl `set-output-retracted --place` từng nơi).
+  (7) Đặt lịch: lịch đăng Facebook lưu cả tập hợp nơi đăng; đến giờ
+  phát lệnh với đúng tập hợp đó; đăng ngay hủy lịch như cũ.
+  (8) Không đổi: phân quyền, các kênh khác, luồng duyệt, thẻ nháp
+  telegra.ph, audit/state semantics ngoài phần target Facebook này.
+  (9) Bản app 0.4.1 → 0.5.0 (VERSION, APP_VERSION, ?v=0.5.0, SW
+  cache v8, dòng phiên bản trong app). Mini App đang tạm dừng chưa
+  gắn số phiên bản nào nên 0.5.0 không xung đột; khi Mini App tiếp
+  tục sẽ bump tiếp từ 0.5.0.
+- Ảnh hưởng: SRS mục 3.x (luồng đăng Facebook, đặt lịch, thu hồi),
+  schema outputs + bảng facebook_pages mới; kiểm thử: webapp 53/53
+  + test mới, bot 215/215 + test mới. Sao lưu trước khi sửa tại
+  data/backup-fbmulti-20261024-143152/ (bản sao webapp + bot.db).
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

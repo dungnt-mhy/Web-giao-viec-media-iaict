@@ -62,7 +62,14 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 MAX_REQUEST_BYTES = 1024 * 1024 * 1024
 
 ICT = timezone(timedelta(hours=7), name="ICT")
-FB_TARGETS = ("profile", "page")
+
+
+def _fb_targets_response(store):
+    """422/modal payload targets: [{key, label, short}] from live
+    data (TD-0013) — the profile plus the facebook_pages rows, never
+    a hardcoded list."""
+    return [{"key": p["key"], "label": p["label"], "short": p["short"]}
+            for p in store.fb_places()]
 
 #: Roles allowed to create tasks (mirrors handlers.CREATOR_ROLES of
 #: the bot: every granted role; pending users with role NULL cannot).
@@ -141,8 +148,8 @@ def task_public(row, creator_name=None) -> dict:
     }
 
 
-def output_public(row) -> dict:
-    return {
+def output_public(row, store=None) -> dict:
+    data = {
         "id": row["id"],
         "task_code": row["task_code"],
         "channel": row["channel"],
@@ -163,6 +170,11 @@ def output_public(row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    if store is not None:
+        # TD-0013: multi-place state for the pickers and cards.
+        data["fb_places"] = _fb_targets_response(store)
+        data["fb_state"] = store.fb_state(row)
+    return data
 
 
 def default_files_dir() -> Path:
@@ -418,6 +430,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._review_queue()
             if method == "GET" and path == "/api/scheduled":
                 return self._scheduled()
+            if method == "GET" and path == "/api/facebook-targets":
+                return self._facebook_targets()
             if method == "GET" and path == "/api/notifications":
                 return self._notifications()
             if method == "POST" and path == "/api/notifications/read":
@@ -807,7 +821,7 @@ class Handler(BaseHTTPRequestHandler):
         creator_name = creator["display_name"] if creator else None
         self._send_json(HTTPStatus.OK, {
             "task": task_public(task, creator_name=creator_name),
-            "outputs": [output_public(o) for o in outputs],
+            "outputs": [output_public(o, self.app.store) for o in outputs],
             "files": self._task_files(task),
             "audit": audit,
         })
@@ -898,7 +912,7 @@ class Handler(BaseHTTPRequestHandler):
             "task": task_public(
                 task,
                 creator_name=creator["display_name"] if creator else None),
-            "outputs": [output_public(o) for o in outputs],
+            "outputs": [output_public(o, self.app.store) for o in outputs],
             "files": self._task_files(task),
         })
 
@@ -927,7 +941,8 @@ class Handler(BaseHTTPRequestHandler):
               status: int = HTTPStatus.OK, extra=None) -> None:
         payload = {"ok": True, "message": message,
                    "output": output_public(
-                       self.app.store.get_output(output_id))}
+                       self.app.store.get_output(output_id),
+                       self.app.store)}
         if extra:
             payload.update(extra)
         self._send_json(status, payload)
@@ -1091,6 +1106,25 @@ class Handler(BaseHTTPRequestHandler):
             self._bad_state("Thẻ kênh này chưa ở trạng thái chờ đăng.")
         return output
 
+    def _fb_targets_from_body(self, body):
+        """Accept {targets: [...]} (TD-0013) or {target: ...}
+        (legacy). Returns (targets, status) with status in
+        ("ok", "missing", "invalid")."""
+        raw = body.get("targets")
+        if raw is not None:
+            targets = self.app.store.validate_fb_targets(raw)
+            return (targets, "ok" if targets else "invalid")
+        legacy = body.get("target")
+        if legacy is None:
+            return (None, "missing")
+        # Legacy single values ("profile"/"page") map to the new
+        # place keys before validation.
+        if legacy in ("profile", "page"):
+            key = storage.fb_legacy_to_key(legacy)
+            targets = self.app.store.validate_fb_targets([key])
+            return (targets, "ok" if targets else "invalid")
+        return (None, "invalid")
+
     def _act_publish(self, user, output, task, body):
         if not roles.can_publish(user):
             self._deny(user, output, task,
@@ -1098,44 +1132,56 @@ class Handler(BaseHTTPRequestHandler):
                        "Bạn không có quyền đăng.")
         output = self._prepare_publishable(user, output, task)
         if output["channel"] == "facebook":
-            target = body.get("target")
-            if target is None:
+            targets, status = self._fb_targets_from_body(body)
+            if status == "missing":
                 # Mirror the bot: opening the target choice freezes
                 # the card (pending_choice) until publish or abort.
                 self.app.store.set_output_pending_choice(output["id"], True)
                 return self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {
                     "error": "Cần chọn nơi đăng Facebook trước.",
                     "code": "target_required",
-                    "targets": list(FB_TARGETS),
+                    "targets": _fb_targets_response(self.app.store),
                     "output": output_public(
-                        self.app.store.get_output(output["id"])),
+                        self.app.store.get_output(output["id"]),
+                        self.app.store),
                 })
-            if target not in FB_TARGETS:
+            if status == "invalid":
                 raise ApiError(HTTPStatus.BAD_REQUEST,
                                "Nơi đăng Facebook không hợp lệ.")
         else:
-            target = None
+            targets = None
             if output["pending_choice"]:
                 raise ApiError(HTTPStatus.CONFLICT,
                                "Lệnh đăng đang được xử lý.")
         if output["scheduled_at"]:
             self.app.store.set_output_schedule(output["id"], None, None)
         self.app.store.set_output_pending_choice(output["id"], True)
+        if targets:
+            self.app.store.set_output_fb_request(output["id"], targets)
         detail = f"task={task['code']} channel={output['channel']}"
-        if target:
-            detail += f" target={target}"
+        if targets:
+            detail += f" targets={','.join(targets)}"
+            legacy = storage.fb_key_to_legacy(targets[0])
+            if legacy:
+                detail += f" target={legacy}"
         self.app.store.audit(user["telegram_id"], "publish_requested",
                              "output", output["id"], detail=detail)
         body_text = (f"{task['code']} · "
                      f"{storage.channel_label(output['channel'])}")
-        if target:
-            body_text += f" · nơi đăng: {target}"
+        if targets:
+            shorts = ", ".join(self.app.store.fb_place_short(k)
+                               for k in targets)
+            body_text += f" · nơi đăng: {shorts}"
         self._notify_async(
             self._reviewer_ids(exclude=user["telegram_id"]),
             "🚀 Có lệnh đăng mới", body_text, f"/?task={task['code']}")
-        self._done(output["id"],
-                   "Đã nhận lệnh đăng — Muse sẽ đăng ngay và gửi "
-                   "link bài khi xong.")
+        if targets:
+            message = (f"Đã nhận lệnh đăng lên {len(targets)} nơi — "
+                       "Muse sẽ đăng ngay và gửi link bài khi xong.")
+        else:
+            message = ("Đã nhận lệnh đăng — Muse sẽ đăng ngay và gửi "
+                       "link bài khi xong.")
+        self._done(output["id"], message)
 
     def _act_publish_abort(self, user, output, task, body):
         if not roles.can_publish(user):
@@ -1147,6 +1193,7 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], "publish_aborted", "output", output["id"],
             detail=f"task={task['code']} channel=facebook "
                    "stage=target_choice via=webapp")
+        self.app.store.set_output_fb_pending(output["id"], None)
         self.app.store.set_output_pending_choice(output["id"], False)
         self._done(output["id"], "Đã hủy lệnh đăng.")
 
@@ -1264,22 +1311,25 @@ class Handler(BaseHTTPRequestHandler):
                            "Bạn không có quyền đăng.")
         if output["status"] != storage.STATUS_APPROVED_WAITING:
             self._bad_state("Thẻ kênh này chưa ở trạng thái đặt lịch được.")
-        target = body.get("target")
+        targets = None
         if output["channel"] == "facebook":
-            if target is not None and target not in FB_TARGETS:
+            targets, status = self._fb_targets_from_body(body)
+            if status == "invalid":
                 raise ApiError(HTTPStatus.BAD_REQUEST,
                                "Nơi đăng Facebook không hợp lệ.")
-            if target is None:
+            if status == "missing":
                 self.app.store.set_output_pending_choice(output["id"], True)
                 return self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {
                     "error": "Cần chọn nơi đăng Facebook trước khi "
                              "đặt lịch.",
                     "code": "target_required",
-                    "targets": list(FB_TARGETS),
+                    "targets": _fb_targets_response(self.app.store),
                     "output": output_public(
-                        self.app.store.get_output(output["id"])),
+                        self.app.store.get_output(output["id"]),
+                        self.app.store),
                 })
-        elif target is not None:
+        elif body.get("target") is not None \
+                or body.get("targets") is not None:
             raise ApiError(HTTPStatus.BAD_REQUEST,
                            "Kênh này không có nơi đăng để chọn.")
         when = self._parse_schedule_body(body)
@@ -1289,16 +1339,21 @@ class Handler(BaseHTTPRequestHandler):
                 "error": "Cần chọn giờ đăng.",
                 "code": "time_required",
                 "output": output_public(
-                    self.app.store.get_output(output["id"])),
+                    self.app.store.get_output(output["id"]),
+                    self.app.store),
             })
         when_utc = when.astimezone(timezone.utc).isoformat(timespec="seconds")
         warnings = self._schedule_warnings(output, when_utc)
         self.app.store.set_output_pending_choice(output["id"], False)
-        self.app.store.set_output_schedule(output["id"], when_utc, target)
+        self.app.store.set_output_schedule(output["id"], when_utc,
+                                           targets=targets)
         detail = (f"task={task['code']} channel={output['channel']} "
                   f"when={when.strftime('%H:%M %d/%m/%Y')}")
-        if target:
-            detail += f" target={target}"
+        if targets:
+            detail += f" targets={','.join(targets)}"
+            legacy = storage.fb_key_to_legacy(targets[0])
+            if legacy:
+                detail += f" target={legacy}"
         self.app.store.audit(user["telegram_id"], "schedule_set",
                              "output", output["id"], detail=detail)
         if task["creator_id"] != user["telegram_id"]:
@@ -1309,7 +1364,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"{when.strftime('%H:%M %d/%m/%Y')}",
                 f"/?task={task['code']}")
         self._done(output["id"], "Đã đặt lịch đăng.",
-                   extra={"warnings": warnings, "scheduled_at": when_utc})
+                   extra={"warnings": warnings, "scheduled_at": when_utc,
+                          "targets": targets})
 
     def _act_schedule_abort(self, user, output, task, body):
         self.app.store.set_output_pending_choice(output["id"], False)
@@ -1344,15 +1400,24 @@ class Handler(BaseHTTPRequestHandler):
             if pending is not None and (done is None or pending > done):
                 raise ApiError(HTTPStatus.CONFLICT,
                                "Lệnh thu hồi đang được xử lý rồi.")
+            state = self.app.store.fb_state(output)
+            places = state["done"]
+            detail = (f"task={task['code']} channel=facebook "
+                      f"public_url={output['public_url']}")
+            if places:
+                detail += f" places={','.join(places)}"
             self.app.store.audit(
                 user["telegram_id"], "retract_requested", "output",
-                output["id"],
-                detail=f"task={task['code']} channel=facebook "
-                       f"public_url={output['public_url']}")
+                output["id"], detail=detail)
+            notify_body = f"{task['code']} · {output['public_url']}"
+            if places:
+                shorts = ", ".join(self.app.store.fb_place_short(k)
+                                   for k in places)
+                notify_body += f" · nơi đăng: {shorts}"
             self._notify_async(
                 self._reviewer_ids(exclude=user["telegram_id"]),
                 "↩️ Yêu cầu thu hồi bài Facebook",
-                f"{task['code']} · {output['public_url']}",
+                notify_body,
                 f"/?task={task['code']}")
             return self._done(
                 output["id"],
@@ -1380,7 +1445,12 @@ class Handler(BaseHTTPRequestHandler):
                            "Chỉ người duyệt mới xem được hàng chờ duyệt.")
         rows = self.app.webdb.review_queue()
         self._send_json(HTTPStatus.OK,
-                        {"items": [output_public(r) for r in rows]})
+                        {"items": [output_public(r, self.app.store) for r in rows]})
+
+    def _facebook_targets(self) -> None:
+        self._current_user()
+        self._send_json(HTTPStatus.OK,
+                        {"targets": _fb_targets_response(self.app.store)})
 
     def _scheduled(self) -> None:
         user = self._current_user()
@@ -1389,7 +1459,7 @@ class Handler(BaseHTTPRequestHandler):
                            "Chỉ người duyệt mới xem được lịch đăng.")
         rows = self.app.webdb.scheduled_outputs()
         self._send_json(HTTPStatus.OK,
-                        {"items": [output_public(r) for r in rows]})
+                        {"items": [output_public(r, self.app.store) for r in rows]})
 
     def _notifications(self) -> None:
         user = self._current_user()

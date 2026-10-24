@@ -502,3 +502,51 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   0.4.1; CSS public ?v=0.4.1 chứa đúng quy tắc mới; đủ 5 service
   active. Mini App vẫn TẠM DỪNG, chưa đánh số TD, tiếp tục khi người
   dùng nói tiếp.
+
+## TD-0013 — Đăng Facebook nhiều nơi cùng lúc, sẵn sàng nhiều Fanpage (bản 0.5.0, 24/10/2026)
+- Người dùng yêu cầu: đăng Facebook trước đây chỉ chọn được 1 nơi
+  (trang cá nhân HOẶC Fanpage); nay phải đăng cả 2 nơi trong một lần
+  bấm Đăng, và kiến trúc sẵn sàng cho nhiều Fanpage về sau.
+- Mô hình mới (storage.py dùng chung bot + webapp): khóa nơi đăng
+  `profile` + `page_<fb_page_id>`; bảng mới `facebook_pages` (seed
+  đúng 1 dòng: Minhy 61595515900524 — thêm Fanpage sau này chỉ cần
+  thêm dòng, chưa có màn hình quản lý Fanpage); 6 cột JSON mới trên
+  outputs (`publish_targets`, `fb_target_set`, `fb_place_urls`,
+  `fb_place_failed`, `fb_place_retracted`, `fb_pending_targets`).
+  Tương thích ngược: target đơn cũ đọc như danh sách 1 phần tử;
+  link đơn cũ đọc như đã đăng xong 1 nơi.
+- Bot: màn chọn nơi đăng thành nút bật/tắt từng nơi (✅ đang chọn,
+  ❌ bỏ chọn, nơi đã đăng hiện "đã đăng" và không chọn lại được),
+  mặc định chọn sẵn tất cả nơi chưa đăng, nút xác nhận "Đăng lên
+  N nơi" / "Đặt lịch N nơi", bắt buộc ≥1 nơi; handler chọn đơn cũ
+  (out_pubto/out_schto) vẫn giữ cho tin nhắn đang bay.
+- Webapp: modal chọn nơi đăng thành checkbox nhiều lựa chọn (cả
+  đăng ngay lẫn đặt lịch) + nút xác nhận đếm N nơi; API chấp nhận
+  `targets` list (vẫn nhận `target` đơn cũ); thêm GET
+  /api/facebook-targets; thẻ kênh hiển thị link từng nơi + nơi lỗi.
+- Ngữ nghĩa: chỉ lật PUBLISHED khi đủ mọi nơi trong tập hợp
+  (botctl `set-output-published --place` từng nơi; nơi lỗi ghi bằng
+  `set-output-place-failed`, đầu ra ở lại chờ đăng, đăng lại chỉ
+  đăng nơi chưa xong, không đăng trùng); thu hồi phải xoá thật đủ
+  mọi nơi đã đăng rồi mới lật RETRACTED (botctl
+  `set-output-retracted --place` từng nơi; không --place với bài
+  nhiều nơi thì bị từ chối). Lịch đăng lưu cả tập hợp; đến giờ
+  phát lệnh với đúng tập hợp đó; đăng ngay hủy lịch như cũ.
+- Kiểm thử: webapp 54/54 (53 cũ + 1 mới), bot 230/230 (215 cũ +
+  15 mới = 5 test × 3 pha: toggle/confirm, chặn chọn rỗng, đăng
+  từng phần + đăng lại + thu hồi qua botctl, tương thích legacy,
+  lịch cả 2 nơi + fire). Chạy thử trên bản sao DB thật (probe
+  CV-0015): đăng profile xong vẫn chờ đăng, page lỗi được ghi,
+  đăng page xong lật PUBLISHED, đăng trùng bị từ chối, thu hồi
+  thiếu --place bị từ chối, thu hồi đủ 2 nơi lật RETRACTED; DB thật
+  kiểm chứng sha256 không đổi.
+- Hạ tầng: restart bot + webapp; health local + public đều 0.5.0,
+  trang đăng nhập public 200, đủ 5 service active; migration trên
+  DB thật đã thêm đủ cột + seed Fanpage Minhy. SRS: TD-0013 (cùng
+  TD-0012) vẫn ⏳ chờ gộp sau.
+- Lưu ý kiểm chứng: trong lúc verify public sau restart có đúng 1
+  request lạ bị server từ chối 501 với request line "{}GET"
+  (journal webapp 14:44:05); 3 lần curl sau đó + mọi lần sau đều
+  200 + JSON 0.5.0, và grep 1 giờ chỉ có đúng 1 dòng 501 — kết
+  luận là probe méo mó thoáng qua lúc tunnel nối lại, không phải
+  lỗi phục vụ; cần theo dõi nếu tái diễn.
