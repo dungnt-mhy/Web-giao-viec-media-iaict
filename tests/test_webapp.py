@@ -590,6 +590,41 @@ class WebAppTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(raw.startswith(b"\x89PNG"))
 
+    def test_ui40_version_and_new_nav_markup(self):
+        # TD-0011: version 0.4.0 nhất quán + dấu vết tĩnh của nav
+        # mới, wizard footer mới, collapse, dark mode.
+        status, data, _ = self.req("GET", "/api/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["version"], "0.4.0")
+        admin = self.login("admin")
+        status, raw, _ = self.req_bytes("GET", "/", token=admin)
+        html = raw.decode("utf-8")
+        self.assertIn("?v=0.4.0", html)
+        self.assertIn('id="moreSheet"', html)
+        self.assertIn('id="moreScrim"', html)
+        self.assertIn('id="sideCollapseBtn"', html)
+        status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
+        js = raw.decode("utf-8")
+        self.assertIn("0.4.0", js)
+        self.assertIn("fab-circle", js)
+        self.assertIn("data-review-badge", js)
+        self.assertIn("day-group", js)
+        self.assertIn("sidebar-collapsed", js)
+        # Wizard footer: nút chính đứng trước hàng nút phụ.
+        self.assertLess(js.index('id="wizardNext"'),
+                        js.index("wizard-foot-sub"))
+        # Bảng Thêm không được kẹt lại khi đổi màn (vd bấm chuông).
+        self.assertIn("function navigate(route, taskCode = null) {\n"
+                      "  closeMore();", js)
+        status, raw, _ = self.req_bytes("GET", "/styles.css", token=admin)
+        css = raw.decode("utf-8")
+        self.assertIn("prefers-color-scheme: dark", css)
+        self.assertIn("fab-circle", css)
+        self.assertIn("more-sheet", css)
+        status, raw, _ = self.req_bytes("GET", "/sw.js")
+        self.assertIn(b"giao-viec-iaict-v6", raw)
+        self.assertIn(b"app.js?v=0.4.0", raw)
+
     # ------------------------------------------------ GĐ2: uploads/files
     def test_upload_create_task_files_download_and_range(self):
         admin = self.login("admin")

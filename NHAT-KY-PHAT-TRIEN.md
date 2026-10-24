@@ -431,3 +431,54 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
 
 ## 2026-10-24 — TD-0010: làm đẹp thanh điều hướng dưới đáy (mobile)
 - Bottom nav từ dải phẳng sát mép thành thanh nổi bo tròn (nền trắng mờ blur, bóng mềm, hở viền + safe-area); mục đang chọn: icon trong viên thuốc teal nhạt + chữ đậm teal đậm; nút Giao việc ở giữa thành nút tròn teal nổi cao hơn thanh; badge chưa đọc bám góc icon (đã thêm badge vào template bottom nav, trước đây chỉ có ở chuông topbar); đệm cuối nội dung và vị trí toast chỉnh theo chiều cao thanh mới. Sidebar desktop không đổi. Bản 0.3.2, SW cache v5, kiểm thử webapp 52/52.
+
+## 2026-10-24 — TD-0011: áp giao diện mới đã chốt vào app thật, bản 0.4.0
+- Người dùng nói "Chốt" sau khi duyệt mô phỏng bấm thử + chọn Mẫu 1
+  "Gradient viền trắng" cho nút Giao việc. Triển khai đúng phạm vi đã
+  chốt: CHỈ đổi giao diện/bố cục, không đổi API, schema, audit/state,
+  phân quyền, logic nghiệp vụ. Ghi TD-0011 vào THAY-DOI.md trước khi
+  code; sao lưu toàn bộ webapp + bot.db tại
+  data/backup-ui40-20261024-112524/ trước khi sửa.
+- Nội dung: thẻ bo 20px, đệm và tầng bậc chữ thoáng hơn, giữ tông
+  teal; thẻ Ưu tiên hổ phách + thẻ Tổng kết hôm nay thành hero trên
+  Tổng quan; vùng hoạt động cuộn riêng; collapse cho khối thông tin
+  việc, từng thẻ kênh, bộ lọc màn Việc, nhóm thông báo theo ngày;
+  sidebar desktop có nút thu gọn thành thanh icon (lưu localStorage);
+  nav mobile 6 cột (Tổng quan, Việc, nút +, Chờ duyệt, Thông báo,
+  Thêm) với nút + đúng Mẫu 1 (tròn 54px, 48px ở màn ≤340px, gradient
+  140deg #1cc79b → #0da678 → #066e52, viền trắng đặc 3px, vòng ngoài
+  rgba(9,120,90,.16), KHÔNG đổ bóng, dấu + trắng 28px nét 3.4, nhô
+  khoảng 19px, nhãn "Giao việc" teal đậm); nhãn một dòng 9.5px
+  (8.5px ở màn ≤340px); badge tròn 19×19 cố định kèm badge số thẻ chờ
+  duyệt từ review-queue (chỉ hiển thị); bảng "Thêm" (Lịch đăng, Thống
+  kê, Người dùng) chạm ngoài/Esc đóng; chân wizard nút chính
+  full-width nằm trên, nút phụ thành hàng dưới; dark mode theo hệ
+  thống; bản 0.4.0 nhất quán mọi nơi + SW cache v6, shell
+  network-first.
+- Kiểm chứng hiển thị thật (không chỉ đọc mã): chạy instance bản sao
+  DB + tài khoản probe riêng ở cổng nội bộ, lái Chromium headless qua
+  CDP và chụp 17 ảnh ở 320/360/390px và 1440px, sáng + tối (dark mode
+  kích hoạt bằng --force-dark-mode, đã xác nhận pixel nền tối). Vì
+  Chrome 152 trên máy này chặn điều hướng tới loopback bằng
+  ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS, cầu nối dùng miền
+  Fetch của CDP: chặn mọi request tới loopback và tự trả nội dung
+  lấy qua Python (kèm cookie jar riêng ở phía cầu vì cookie từ
+  fulfillRequest không vào kho cookie của Chrome; chặn sw.js để
+  service worker không chiếm fetch của trang). Kết quả: không tràn
+  ngang, nhãn một dòng thẳng hàng, badge tròn không méo/không bị
+  che, nút + đúng Mẫu 1, bảng Thêm mở/đóng được, wizard 3 bước chạy
+  trọn với chân wizard đúng thứ tự, sidebar thu gọn/mở lại được,
+  collapse hoạt động, dark mode đúng cả hai khung.
+- Điểm sửa thêm phát hiện khi kiểm chứng: bảng "Thêm" kẹt lại phía
+  trên màn mới khi đổi màn bằng nút chuông (scrim không che topbar)
+  → `navigate()` nay luôn đóng bảng trước khi đổi màn; đã bổ sung
+  test tĩnh cho điểm này vào bộ webapp (giữ 53/53, bot 215/215).
+- Sự cố hạ tầng giữa chừng: máy chủ lại bị thay làm mất unit/env
+  systemd, public báo Cloudflare 1033. Đã khôi phục đủ 5 service
+  (tạo lại /etc/default/cf-edge-relay + webapp-giao-viec 600 chứa
+  proxy egress, chép unit từ thư mục dự án/tools, daemon-reload,
+  enable --now); tunnel đăng ký lại cả 2 region qua HTTP/2 (region2
+  timeout một lần rồi tự khỏi); kiểm chứng cuối: health local +
+  public đều 0.4.0, trang đăng nhập public 200.
+- Tài liệu: gộp TD-0007 (phần tên miền/HTTPS), TD-0009, TD-0010,
+  TD-0011 vào SRS 1.3 (GĐ4 còn lại: chuyển đội + tắt dần bot).

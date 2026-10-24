@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.4.0";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -161,40 +161,107 @@ function renderNav(unread = null) {
     </button>`).join("");
   $("#sideNav").innerHTML = html;
   $("#mobileNav").innerHTML = html;
-  const bottomOrder = ["dashboard", "tasks", "create",
-    state.me.can_review ? "review" : "notifications", "stats"];
-  const bottomItems = items.filter((i) => bottomOrder.includes(i.route));
-  if (!state.me.can_review) {
-    bottomItems.push(...items.filter((i) => i.route === "schedule"));
+  /* TD-0011: bottom nav mới — 6 cột đều nhau: Tổng quan, Việc,
+     nút + (Mẫu 1) cạnh nút Việc, Chờ duyệt, Thông báo, Thêm.
+     Các mục theo quyền như cũ; Thêm chỉ hiện khi còn mục dư. */
+  const extras = [];
+  if (state.me.can_review) {
+    extras.push(
+      { route: "schedule", icon: "🕐", label: "Lịch đăng" },
+      { route: "stats", icon: "📊", label: "Thống kê" },
+    );
   }
-  $("#bottomNav").innerHTML = bottomItems.slice(0, 5).map((item) => `
-    <button class="nav-btn ${state.route === item.route ? "active" : ""}" data-nav="${item.route}" aria-label="${item.label}">
-      <span>${item.icon}</span><span>${item.label}</span>
+  if (state.me.can_manage_users) {
+    extras.push({ route: "users", icon: "👥", label: "Người dùng" });
+  }
+  const bottomItems = [
+    { route: "dashboard", icon: "🏠", label: "Tổng quan" },
+    { route: "tasks", icon: "📋", label: "Việc" },
+    { route: "create", icon: "➕", label: "Giao việc", fab: true },
+  ];
+  if (state.me.can_review) {
+    bottomItems.push({ route: "review", icon: "⏳", label: "Chờ duyệt", reviewBadge: true });
+  }
+  bottomItems.push({ route: "notifications", icon: "🔔", label: "Thông báo", badge: true });
+  if (extras.length) bottomItems.push({ route: "__more", icon: "▦", label: "Thêm", more: true });
+  $("#bottomNav").innerHTML = bottomItems.map((item) => {
+    if (item.fab) {
+      return `<button class="nav-btn fab-btn" data-nav="create" aria-label="Giao việc">
+        <span class="fab-circle"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><path d="M14 5v18M5 14h18" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg></span>
+        <span class="fab-label">Giao việc</span>
+      </button>`;
+    }
+    if (item.more) {
+      const active = ["schedule", "stats", "users"].includes(state.route) ? "active" : "";
+      return `<button class="nav-btn ${active}" data-more aria-label="Thêm">
+        <span>${item.icon}</span><span class="nav-label">${item.label}</span>
+      </button>`;
+    }
+    const active = state.route === item.route || (item.route === "tasks" && state.route === "detail") ? "active" : "";
+    return `<button class="nav-btn ${active}" data-nav="${item.route}" aria-label="${item.label}">
+      <span>${item.icon}</span><span class="nav-label">${item.label}</span>
       ${item.badge ? `<span class="badge" data-unread-badge ${unread ? "" : "hidden"}>${unread || ""}</span>` : ""}
+      ${item.reviewBadge ? `<span class="badge" data-review-badge hidden></span>` : ""}
+    </button>`;
+  }).join("");
+  $("#moreSheet").innerHTML = extras.map((item) => `
+    <button class="nav-btn ${state.route === item.route ? "active" : ""}" data-nav="${item.route}" role="menuitem">
+      <span>${item.icon}</span><span>${item.label}</span>
     </button>`).join("");
   $$("[data-nav]").forEach((btn) =>
-    btn.addEventListener("click", () => navigate(btn.dataset.nav)));
+    btn.addEventListener("click", () => { closeMore(); navigate(btn.dataset.nav); }));
+  const moreBtn = $("[data-more]");
+  if (moreBtn) moreBtn.addEventListener("click", () => {
+    const sheet = $("#moreSheet");
+    if (sheet.hidden) openMore(); else closeMore();
+  });
+  $("#moreScrim").addEventListener("click", closeMore);
   if (unread !== null) updateBadges(unread);
 }
 
-function updateBadges(unread) {
+function openMore() {
+  $("#moreSheet").hidden = false;
+  $("#moreScrim").hidden = false;
+}
+function closeMore() {
+  $("#moreSheet").hidden = true;
+  $("#moreScrim").hidden = true;
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMore();
+});
+
+function updateBadges(unread, reviewCount = null) {
   $("#bellBadge").hidden = !unread;
   $("#bellBadge").textContent = unread || "";
   $$("[data-unread-badge]").forEach((badge) => {
     badge.hidden = !unread;
     badge.textContent = unread || "";
   });
+  $$("[data-review-badge]").forEach((badge) => {
+    if (reviewCount === null) return;
+    badge.hidden = !reviewCount;
+    badge.textContent = reviewCount > 99 ? "99" : String(reviewCount);
+  });
 }
 
 async function refreshBadge() {
   try {
     const data = await api("/api/notifications");
-    updateBadges(data.unread);
+    let reviewCount = null;
+    if (state.me?.can_review) {
+      try {
+        const queue = await api("/api/review-queue");
+        reviewCount = queue.items.length;
+      } catch { /* badge chờ duyệt chỉ là hiển thị thêm */ }
+    }
+    updateBadges(data.unread, reviewCount);
     return data;
   } catch { return null; }
 }
 
 function navigate(route, taskCode = null) {
+  closeMore(); // sheet must never survive a route change (e.g. bell tap)
   state.route = route;
   state.taskCode = taskCode;
   renderNav();
@@ -227,6 +294,13 @@ function showApp() {
   $("#sideAvatar").textContent = (me.display_name || "?").trim().charAt(0).toUpperCase();
   $("#sideUserName").textContent = me.display_name;
   $("#sideUserRole").textContent = `${me.role_title}${me.can_publish ? " · có quyền đăng" : ""}`;
+  try {
+    if (localStorage.getItem("gv-sidebar-collapsed") === "1") {
+      $(".app-shell").classList.add("sidebar-collapsed");
+      $("#sideCollapseBtn").textContent = "▶";
+      $("#sideCollapseBtn").title = "Mở rộng sidebar";
+    }
+  } catch {}
   // Push notifications deep-link with ?task=CV-xxxx: open that task.
   const taskParam = new URLSearchParams(location.search).get("task");
   if (taskParam) navigate("detail", taskParam);
@@ -268,6 +342,15 @@ async function logout() {
 $("#logoutBtn").addEventListener("click", logout);
 $("#logoutBtnMobile").addEventListener("click", logout);
 $("#bellBtn").addEventListener("click", () => navigate("notifications"));
+
+/* TD-0011: thu gọn sidebar desktop thành thanh icon, nhớ lựa chọn. */
+$("#sideCollapseBtn").addEventListener("click", () => {
+  const collapsed = $(".app-shell").classList.toggle("sidebar-collapsed");
+  try { localStorage.setItem("gv-sidebar-collapsed", collapsed ? "1" : "0"); } catch {}
+  $("#sideCollapseBtn").textContent = collapsed ? "▶" : "◀ Thu gọn";
+  $("#sideCollapseBtn").title = collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar";
+  $("#sideCollapseBtn").setAttribute("aria-label", collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar");
+});
 
 /* ============================= modals ============================= */
 
@@ -368,6 +451,11 @@ async function renderDashboard() {
       <div><h2>🏠 Tổng quan</h2><p>Xin chào ${esc(me.display_name)} · ${esc(me.role_title)}</p></div>
       <button class="btn btn-primary" id="dashCreate">📝 Giao việc mới</button>
     </div>
+    ${me.can_review && review.items.length ? `
+    <section class="card priority-card" style="margin-bottom:1rem">
+      <div class="row-item"><h3>⚠️ Ưu tiên · ${review.items.length} thẻ kênh chờ duyệt</h3><button class="btn btn-small" data-go="review">Duyệt ngay →</button></div>
+      <p class="meta-line">Có thẻ kênh đang chờ người duyệt xử lý — duyệt sớm để kịp lịch đăng.</p>
+    </section>` : ""}
     <div class="grid grid-4">
       <div class="card metric"><span>📋 Tổng số việc</span><strong>${tasks.total}</strong><span>${working} việc Muse đang làm / chờ duyệt</span></div>
       <div class="card metric"><span>⏳ Thẻ kênh chờ duyệt</span><strong>${review.items.length}</strong><span>${me.can_review ? "Bạn có quyền duyệt" : "Chỉ người duyệt xem"}</span></div>
@@ -375,7 +463,7 @@ async function renderDashboard() {
       <div class="card metric"><span>✅ Đầu ra đã đăng</span><strong>${statsData ? statsData.published_total : "—"}</strong><span>${statsData ? `trên tổng ${statsData.outputs_total} đầu ra` : "Thống kê dành cho người duyệt"}</span></div>
     </div>
     ${daily ? `
-    <section class="card" style="margin-top:1rem">
+    <section class="card hero-card" style="margin-top:1rem">
       <div class="row-item"><h3>🌆 Tổng kết hôm nay</h3><span class="pill info">${esc(daily.label)}</span></div>
       <p class="meta-line">🗂 Việc tạo mới: <strong>${daily.tasks_created}</strong> · 🚀 Đã đăng: <strong>${daily.published_today}</strong> · ⏳ Đang chờ duyệt: <strong>${daily.pending_review}</strong> đầu ra · 🕐 Đang chờ đăng: <strong>${daily.approved_waiting}</strong> đầu ra</p>
       <p class="meta-line">${Object.entries(daily.outputs_by_status || {}).map(([s, n]) => `<span class="channel-chip">${esc(STATUS_LABELS[s] || s)}: ${n}</span>`).join(" ") || "Chưa có đầu ra nào hôm nay."}</p>
@@ -387,7 +475,7 @@ async function renderDashboard() {
       </section>
       <section class="card">
         <div class="row-item"><h3>🔔 Hoạt động liên quan tới bạn</h3><button class="btn btn-small" data-go="notifications">Mở hộp thông báo</button></div>
-        <div class="list">${notifications.items.slice(0, 6).map(notificationRow).join("") || `<p class="muted">Chưa có thông báo nào.</p>`}</div>
+        <div class="list activity-scroll">${notifications.items.slice(0, 6).map(notificationRow).join("") || `<p class="muted">Chưa có thông báo nào.</p>`}</div>
       </section>
     </div>`;
   $("#dashCreate").addEventListener("click", () => navigate("create"));
@@ -435,14 +523,17 @@ async function renderTasks() {
       <div><h2>📋 Danh sách việc</h2><p>Tìm kiếm và lọc theo trạng thái, kênh, người tạo.</p></div>
       <button class="btn btn-primary" id="tasksCreate">📝 Giao việc mới</button>
     </div>
-    <form id="taskFilters" class="filters">
-      <input name="q" placeholder="🔎 Tìm theo mã việc hoặc gợi ý…">
-      <select name="channel"><option value="">Tất cả kênh</option>
-        ${CHANNELS.map((c) => `<option value="${c.key}">${c.icon} ${c.name}</option>`).join("")}</select>
-      <select name="creator"><option value="">Tất cả người tạo</option>
-        <option value="${me.id}">Của tôi</option>
-        ${users.filter((u) => u.id !== me.id).map((u) => `<option value="${u.id}">${esc(u.display_name)}</option>`).join("")}</select>
-    </form>
+    <details class="filter-details" open>
+      <summary>🔎 Tìm kiếm & lọc</summary>
+      <form id="taskFilters" class="filters">
+        <input name="q" placeholder="🔎 Tìm theo mã việc hoặc gợi ý…">
+        <select name="channel"><option value="">Tất cả kênh</option>
+          ${CHANNELS.map((c) => `<option value="${c.key}">${c.icon} ${c.name}</option>`).join("")}</select>
+        <select name="creator"><option value="">Tất cả người tạo</option>
+          <option value="${me.id}">Của tôi</option>
+          ${users.filter((u) => u.id !== me.id).map((u) => `<option value="${u.id}">${esc(u.display_name)}</option>`).join("")}</select>
+      </form>
+    </details>
     <div class="status-chips" id="statusChips" aria-label="Lọc theo trạng thái"></div>
     <div id="taskList" class="list"><div class="loading">⏳ Đang tải…</div></div>`;
   $("#tasksCreate").addEventListener("click", () => navigate("create"));
@@ -541,13 +632,13 @@ async function renderCreate() {
     <div class="steps">${stepNames.map((name, i) => `<span class="step ${w.step === i + 1 ? "active" : w.step > i + 1 ? "done" : ""}">${name}</span>`).join("")}</div>
     <section class="card">${body}
       <div class="wizard-foot">
-        <button class="btn" id="wizardBack" ${w.step === 1 ? "disabled" : ""}>← Quay lại</button>
-        <span>
+        ${w.step < 3
+          ? `<button class="btn btn-primary" id="wizardNext">Tiếp tục →</button>`
+          : `<button class="btn btn-primary" id="wizardSubmit">🚀 Chốt! Gửi Muse</button>`}
+        <div class="wizard-foot-sub">
+          <button class="btn" id="wizardBack" ${w.step === 1 ? "disabled" : ""}>← Quay lại</button>
           <button class="btn" id="wizardCancel">🗑 Hủy việc</button>
-          ${w.step < 3
-            ? `<button class="btn btn-primary" id="wizardNext">Tiếp tục →</button>`
-            : `<button class="btn btn-primary" id="wizardSubmit">🚀 Chốt! Gửi Muse</button>`}
-        </span>
+        </div>
       </div>
     </section>`;
   const capture = () => {
@@ -684,10 +775,16 @@ function outputCard(output, task) {
     }
   }
   return `
-  <article class="card channel-card status-${esc(output.status)}">
-    <div class="row-item">
+  <details class="card channel-card status-${esc(output.status)}" open>
+    <summary>
+      <div class="row-item">
+        <div class="row-main">
+          <strong>🧾 Thẻ kênh ${esc(meta.name)} — ${esc(STATUS_LABELS[output.status] || output.status)}</strong>
+        </div>${statusPill(output.status)}
+      </div>
+    </summary>
+    <div class="channel-body">
       <div class="row-main">
-        <strong>🧾 Thẻ kênh ${esc(meta.name)} — ${esc(STATUS_LABELS[output.status] || output.status)}</strong>
         <p class="meta-line">🗂 ${esc(output.task_code)}${meta.kind ? ` · ${esc(meta.kind)}` : ""}</p>
         <p class="meta-line">👤 ${esc(creatorName)} · ${fmtTime(output.created_at)}</p>
         <p class="meta-line">💡 ${esc(task.hint || output.task_hint || "(không có gợi ý)")}</p>
@@ -696,13 +793,13 @@ function outputCard(output, task) {
         ${output.public_url ? `<p class="meta-line">🔗 ${output.status === "RETRACTED" ? "Bài đã xóa" : "Đã đăng"}: <a href="${esc(output.public_url)}" target="_blank" rel="noopener">${esc(output.public_url)}</a></p>` : ""}
         ${output.status === "REJECTED" && output.reject_reason ? `<p class="meta-line">✏️ Yêu cầu chỉnh sửa: ${esc(output.reject_reason)}</p>` : ""}
         ${output.pending_choice ? `<p class="meta-line">⏳ Đang có lựa chọn/lệnh chưa hoàn tất — các nút khác tạm ẩn.</p>` : ""}
-      </div>${statusPill(output.status)}
+      </div>
+      <div class="actions">
+        ${outputActions(output, task).map((a) => `<button class="btn btn-small ${a.primary ? "btn-primary" : ""} ${a.danger ? "btn-danger" : ""}"
+          data-output-action="${a.action || ""}" data-output-id="${output.id}" ${a.disabled ? "disabled" : ""}>${a.label}</button>`).join("")}
+      </div>
     </div>
-    <div class="actions">
-      ${outputActions(output, task).map((a) => `<button class="btn btn-small ${a.primary ? "btn-primary" : ""} ${a.danger ? "btn-danger" : ""}"
-        data-output-action="${a.action || ""}" data-output-id="${output.id}" ${a.disabled ? "disabled" : ""}>${a.label}</button>`).join("")}
-    </div>
-  </article>`;
+  </details>`;
 }
 
 async function renderDetail() {
@@ -714,7 +811,9 @@ async function renderDetail() {
       <div><h2>🧾 ${esc(task.code)}</h2><p>${esc(task.hint || "(chưa có gợi ý)")}</p></div>
       <button class="btn" id="backTasks">← Danh sách việc</button>
     </div>
-    <section class="card">
+    <details class="card collapse-block" open>
+      <summary>🧾 Thông tin việc · ${esc(task.code)}</summary>
+      <div class="collapse-body">
       <p class="meta-line">🗂 Mã việc: ${esc(task.code)} · trạng thái tổng: ${esc(STATUS_LABELS[task.status] || task.status)}</p>
       <p class="meta-line">👤 Người tạo: ${esc(task.creator_name || task.creator_id)} · ${fmtTime(task.created_at)}</p>
       <p class="meta-line">💡 Gợi ý: ${esc(task.hint || "(không có)")}</p>
@@ -726,7 +825,8 @@ async function renderDetail() {
           <label class="field">Thêm tư liệu<input type="file" id="addFiles" multiple></label>
           <button class="btn btn-soft btn-small" type="submit">⬆️ Tải thêm tư liệu</button>
         </form>` : ""}
-    </section>
+      </div>
+    </details>
     <h3 style="margin:1.2rem 0 .7rem">Thẻ kênh (${outputs.length})</h3>
     <div class="list">${outputs.map((o) => outputCard(o, task)).join("") || `<div class="empty">Việc này chưa có thẻ kênh.</div>`}</div>`;
   $("#backTasks").addEventListener("click", () => navigate("tasks"));
@@ -752,10 +852,9 @@ function fileTile(file) {
   const isVideo = (file.content_type || "").startsWith("video/");
   const media = isImage ? `<img src="${esc(file.url)}" alt="">`
     : isVideo ? `<video src="${esc(file.url)}" controls preload="metadata"></video>`
-    : `<div style="height:130px;display:grid;place-items:center;font-size:2.4rem;background:#f1f5f9">📄</div>`;
+    : `<div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">📄</div>`;
   return `<div class="file-tile">${media}<div class="file-name"><a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name)}</a><br><span class="muted">${fmtBytes(file.size)}</span></div></div>`;
 }
-
 function bindOutputActions(reload) {
   $$("[data-output-action]").forEach((btn) => {
     if (!btn.dataset.outputAction) return;
@@ -899,7 +998,7 @@ async function renderReview() {
   $$(".channel-card").forEach((card, i) => {
     card.style.cursor = "pointer";
     card.addEventListener("click", (event) => {
-      if (event.target.closest("button,a,video")) return;
+      if (event.target.closest("button,a,video,summary")) return;
       navigate("detail", data.items[i].task_code);
     });
   });
@@ -919,7 +1018,7 @@ async function renderSchedule() {
   $$(".channel-card").forEach((card, i) => {
     card.style.cursor = "pointer";
     card.addEventListener("click", (event) => {
-      if (event.target.closest("button,a,video")) return;
+      if (event.target.closest("button,a,video,summary")) return;
       navigate("detail", data.items[i].task_code);
     });
   });
@@ -1244,6 +1343,26 @@ async function initPushPanel() {
 async function renderNotifications() {
   const data = await api("/api/notifications");
   updateBadges(data.unread);
+  /* TD-0011: gộp thông báo theo ngày — nhóm mới nhất mở sẵn,
+     các nhóm cũ bấm mới mở. */
+  const groups = new Map();
+  for (const item of data.items) {
+    const d = new Date(item.created_at);
+    const day = Number.isNaN(d.getTime()) ? "Không rõ ngày"
+      : new Intl.DateTimeFormat("vi-VN", {
+          timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric",
+        }).format(d);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(item);
+  }
+  const groupHtml = [...groups.entries()].map(([day, items], gi) => {
+    const unreadCount = items.filter((i) => !i.read).length;
+    return `
+    <details class="day-group" ${gi === 0 ? "open" : ""}>
+      <summary>📅 ${esc(day)} · ${items.length} thông báo${unreadCount ? ` · <span class="pill warn">${unreadCount} chưa đọc</span>` : ""}</summary>
+      <div class="list" style="margin-top:.6rem">${items.map(notificationRow).join("")}</div>
+    </details>`;
+  }).join("");
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>🔔 Thông báo</h2><p>${data.unread} thông báo chưa đọc.</p>
       <p class="muted small">Phiên bản ${APP_VERSION}</p></div>
@@ -1257,7 +1376,7 @@ async function renderNotifications() {
         <button class="btn btn-danger" id="pushDisable" hidden>Tắt thông báo đẩy</button>
       </div>
     </section>
-    <div class="list">${data.items.map(notificationRow).join("") || `<div class="empty">Chưa có thông báo nào.</div>`}</div>`;
+    ${groupHtml || `<div class="empty">Chưa có thông báo nào.</div>`}`;
   $("#markAll").addEventListener("click", async () => {
     await apiJson("/api/notifications/read", "POST", { all: true });
     renderNotifications();

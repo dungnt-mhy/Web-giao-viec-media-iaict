@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản SRS | **1.2** (tổng hợp GĐ3 — TD-0008) |
+| Phiên bản SRS | **1.3** (tổng hợp TD-0007, TD-0009, TD-0010, TD-0011) |
 | Ngày hiệu lực | 24/10/2026 |
 | Trạng thái | Đã chốt theo bản thiết kế được duyệt ngày 24/10/2026 |
 | Sản phẩm | Web App Giao Việc (PWA) — hệ thống giao việc, duyệt và đăng bài truyền thông đa kênh của IAICT |
@@ -125,8 +125,14 @@ Quy tắc bổ sung:
 - Dữ liệu và mã nguồn nằm trong thư mục người dùng trên máy chủ (sống sót qua
   các lần máy chủ bị thay mới); dịch vụ có thể khôi phục thủ công theo quy
   trình đã có của dự án.
-- Triển khai production cần tên miền + HTTPS (chưa thực hiện — thuộc bước
-  triển khai sau GĐ2/GĐ3); trước mắt chạy nội bộ trên cổng 8790.
+- Triển khai production tại **https://post.iaict-platform.com** qua
+  Cloudflare Tunnel `webapp-giao-viec` (ingress → http://127.0.0.1:8790,
+  DNS CNAME proxied) ✅ xong 24/10/2026 (TD-0007). Vì netstack của máy
+  chủ ảo chặn DNS-SRV/UDP/cổng 7844 trực tiếp, kèm 2 dịch vụ phụ trợ
+  riêng của máy này: `cf-dns-stub` (DNS tĩnh cho edge discovery +
+  forward gateway) và `cf-edge-relay` (CONNECT qua proxy egress tới
+  edge thật, ép HTTP/2); khôi phục sau khi máy chủ bị thay theo quy
+  trình trong nhật ký phát triển.
 
 ### 2.6 Giả định
 
@@ -157,7 +163,7 @@ Quy tắc bổ sung:
 | FR-TASK-01 | Tạo việc theo wizard 3 bước: (1) tải tư liệu, (2) ghi/sửa gợi ý, (3) chọn kênh theo quy tắc 2.3, bấm "🚀 Chốt! Gửi Muse" là hoàn tất tạo việc | ✅ Web App GĐ2 (bot ✅) |
 | FR-TASK-02 | Mỗi việc có mã `CV-xxxx` duy nhất tăng dần liên tục giữa cả bot và Web App; hiển thị kèm **người tạo** và **thời gian tạo (giờ Việt Nam)** | ✅ lõi dùng chung |
 | FR-TASK-03 | Tải tư liệu trực tiếp lên Web App (ảnh, video, tệp) thay cho gửi qua Telegram; tư liệu gắn với việc và được Muse truy cập để làm bài; giới hạn 200MB/tệp, lưu đúng cấu trúc `data/files/<MÃ VIỆC>/` của bot, hai điểm vào: kèm lúc tạo việc và gắn thêm vào việc đã có | ✅ GĐ2 |
-| FR-TASK-04 | Danh sách việc có tìm kiếm và lọc theo trạng thái / kênh / người tạo, có phân trang | ✅ API GĐ1 + giao diện GĐ2 |
+| FR-TASK-04 | Danh sách việc có tìm kiếm và lọc theo trạng thái / kênh / người tạo, có phân trang; lọc theo trạng thái theo đúng trạng thái việc suy ra từ các thẻ kênh, API trả thêm `counts` từng trạng thái và giao diện hiện chip lọc kèm số lượng (TD-0009) | ✅ API GĐ1 + giao diện GĐ2; lọc + counts ✅ TD-0009 |
 | FR-TASK-05 | Việc giữ nguyên gợi ý và tư liệu gốc làm hồ sơ; người tạo sửa được gợi ý của việc mình | ✅ bot + Web App GĐ2 |
 | FR-TASK-06 | Mọi vai trò đã được cấp quyền (kể cả Cộng tác viên) đều tạo việc được; tài khoản chờ cấp quyền bị chặn (403) | ✅ GĐ1 |
 
@@ -215,9 +221,9 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-NOTI-01 | Thông báo đẩy (Web Push chuẩn VAPID/RFC 8291) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị duyệt/trả lại, có lệnh đăng, thu hồi, đặt lịch, tổng kết ngày 20:00. Người dùng tự bật/tắt trên từng thiết bị ở màn Thông báo; đăng ký bị dịch vụ đẩy trả 404/410 được tự xóa | ✅ GĐ3 |
+| FR-NOTI-01 | Thông báo đẩy (Web Push chuẩn VAPID/RFC 8291) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị duyệt/trả lại, có lệnh đăng, thu hồi, đặt lịch, tổng kết ngày 20:00. Người dùng tự bật/tắt trên từng thiết bị ở màn Thông báo; đăng ký bị dịch vụ đẩy trả 404/410 được tự xóa; thẻ bật thông báo đẩy LUÔN hiện kèm dòng trạng thái rõ ràng (không ẩn khi lỗi sớm) và giao diện hiện dòng số phiên bản app để đối chiếu cache (TD-0009) | ✅ GĐ3; thẻ luôn hiện + dòng phiên bản ✅ TD-0009 |
 | FR-NOTI-02 | Trong giai đoạn song song, bot Telegram vẫn gửi thông báo như hiện tại (kênh dự phòng) |
-| FR-NOTI-03 | Badge số thông báo chưa đọc trên biểu tượng chuông; mở thông báo đi thẳng tới việc/thẻ kênh liên quan |
+| FR-NOTI-03 | Badge số thông báo chưa đọc trên biểu tượng chuông; mở thông báo đi thẳng tới việc/thẻ kênh liên quan; thanh điều hướng mobile cũng có badge chưa đọc và badge số thẻ chờ duyệt (hình tròn cố định, không méo, không bị nút Giao việc che — TD-0010/TD-0011) |
 
 ### 3.9 Quản lý người dùng
 
@@ -248,9 +254,9 @@ Quy tắc bổ sung:
 | NFR-REL-01 | Dữ liệu nghiệp vụ nằm trong `bot.db` dùng chung; sao lưu bắt buộc trước mọi lần di trú dữ liệu; di trú phải idempotent và chỉ cộng thêm |
 | NFR-REL-02 | Hệ thống khôi phục được sau khi máy chủ bị thay mới: mã nguồn + dữ liệu trong thư mục người dùng còn nguyên; dịch vụ cài lại theo quy trình đã ghi trong nhật ký phát triển |
 | NFR-PERF-01 | Quy mô đội nội bộ nhỏ; API danh sách có phân trang; thao tác thường dùng phản hồi dưới 1 giây trên máy chủ hiện tại |
-| NFR-USE-01 | Giao diện tiếng Việt có dấu; dùng được bằng một tay trên điện thoại; chuẩn hiển thị mỗi dòng 1 icon trên các thẻ |
+| NFR-USE-01 | Giao diện tiếng Việt có dấu; dùng được bằng một tay trên điện thoại; chuẩn hiển thị mỗi dòng 1 icon trên các thẻ; làm kỹ CẢ mobile lẫn desktop. Ngôn ngữ thị giác từ bản 0.4.0 (TD-0011, theo bản thiết kế mới đã chốt): thẻ bo 20px, tầng bậc chữ rõ, tông teal chủ đạo; thanh điều hướng mobile 6 cột (Tổng quan, Việc, nút Giao việc, Chờ duyệt, Thông báo, Thêm) với nút Giao việc tròn gradient viền trắng nổi trên thanh, nhãn một dòng, badge tròn cố định; bảng menu nổi "Thêm" (chạm ngoài/Esc đóng, đổi màn tự đóng); collapse cho khối thông tin việc, thẻ kênh, bộ lọc, nhóm thông báo theo ngày; sidebar desktop thu gọn thành thanh icon; wizard 3 bước với nút chính full-width nằm trên, nút phụ thành hàng dưới; sáng/tối theo hệ thống (prefers-color-scheme). Trước đó: thanh dưới mobile dạng thanh nổi bo tròn (TD-0010, bản 0.3.2); sửa cache vỏ app network-first + SW v4→v6 để người dùng nhận giao diện mới ngay (TD-0009, bản 0.3.1) |
 | NFR-MNT-01 | Không thêm thư viện ngoài khi stdlib đáp ứng được; mọi thay đổi ghi vào `NHAT-KY-PHAT-TRIEN.md` và `THAY-DOI.md`; cuối mỗi giai đoạn hoàn thiện lại tài liệu thiết kế/SRS cho khớp |
-| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215; GĐ3: webapp 51/51, bot 215/215) |
+| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215; GĐ3: webapp 51/51, bot 215/215; TD-0009/TD-0010: webapp 52/52, bot 215/215; TD-0011: webapp 53/53, bot 215/215, bản app 0.4.0) |
 
 ---
 
@@ -284,7 +290,7 @@ Quy tắc bổ sung:
 | `POST /api/auth/login` | Công khai | `{login, password}` → phiên (cookie + token) |
 | `POST /api/auth/logout` | Đã đăng nhập | Hủy phiên hiện tại |
 | `GET /api/auth/me` | Đã đăng nhập | Thông tin + vai trò + quyền của mình |
-| `GET /api/tasks?status=&channel=&creator=&q=&limit=&offset=` | Đã cấp quyền | Danh sách việc có lọc + phân trang |
+| `GET /api/tasks?status=&channel=&creator=&q=&limit=&offset=` | Đã cấp quyền | Danh sách việc có lọc + phân trang; lọc `status` theo đúng trạng thái việc suy ra từ các thẻ kênh, kèm `counts` từng trạng thái (TD-0009) |
 | `GET /api/tasks/<code>` | Đã cấp quyền | Việc + outputs theo kênh + audit liên quan |
 | `POST /api/tasks` | Đã cấp quyền | `{hint, destinations[]}` → tạo việc, sinh mã CV- tiếp nối, tạo outputs, ghi audit |
 | `GET /api/stats/summary?period=today\|week\|month\|all` | Người duyệt | Thống kê tổng hợp |
@@ -313,7 +319,8 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | GĐ1 | API + đăng nhập riêng + di trú dữ liệu | ✅ Xong 24/10/2026 (19/19 test webapp, 215/215 test bot) |
 | GĐ2 | Giao diện các luồng chính: đăng nhập, tổng quan, giao việc 3 bước, danh sách/chi tiết việc + thẻ kênh, chờ duyệt, lịch đăng, thống kê; cài dịch vụ chạy nền (cổng 8790) và tạo tài khoản Admin đầu tiên | ✅ Xong 24/10/2026 (37/37 test webapp, 215/215 test bot; commit c9ec262) |
 | GĐ3 | Thông báo đẩy Web Push + tổng kết ngày trong Web App (quản lý người dùng trên giao diện đã xong ở GĐ2) | ✅ Xong 24/10/2026 (51/51 test webapp, 215/215 test bot; version app 0.3.0; TD-0008) |
-| GĐ4 | Tên miền + HTTPS → chạy song song với bot → đội chuyển hẳn sang Web App → tắt dần bot (dịch vụ chạy nền đã cài từ GĐ2) | 📋 |
+| GĐ4 | Tên miền + HTTPS → chạy song song với bot → đội chuyển hẳn sang Web App → tắt dần bot (dịch vụ chạy nền đã cài từ GĐ2) | 🔶 Tên miền + HTTPS ✅ xong 24/10/2026 (TD-0007: post.iaict-platform.com qua Cloudflare Tunnel); còn chuyển đội + tắt dần bot 📋 |
+| Sau GĐ3 | Hoàn thiện giao diện theo phản hồi dùng thật và bản thiết kế mới đã chốt: sửa cache vỏ app + lọc việc theo trạng thái (TD-0009, bản 0.3.1), thanh dưới mobile dạng nổi bo tròn (TD-0010, bản 0.3.2), áp toàn bộ giao diện mới — nav mobile 6 cột + nút Giao việc Mẫu 1, collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống (TD-0011, bản 0.4.0) | ✅ Xong 24/10/2026 (53/53 test webapp, 215/215 test bot; kiểm chứng hiển thị thật ở 320/360/390px và 1440px, sáng + tối) |
 | Ngoài lộ trình | Đóng gói native (Capacitor) khi thật sự cần | 📋 |
 
 ---
@@ -325,3 +332,4 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | 1.0 | 24/10/2026 | Bản gốc: tổng hợp từ bản thiết kế Web App đã được duyệt (24/10/2026), toàn bộ quy tắc nghiệp vụ đã chốt của hệ thống bot (GĐ1–GĐ2 bot) và GĐ1 Web App đã xây. Từ bản sau, thay đổi đi qua `THAY-DOI.md` rồi tổng hợp vào đây |
 | 1.1 | 24/10/2026 | Tổng hợp TD-0006 (GĐ2): giao diện PWA 9 màn hình, upload tư liệu 200MB/tệp, API thao tác thẻ kênh khớp bot, hàng chờ duyệt/lịch đăng, xuất thống kê, hộp thông báo trong app, đổi mật khẩu, quản lý vai trò trên giao diện; cài dịch vụ chạy nền và tạo tài khoản Admin đầu tiên. Việc còn lại: Web Push (GĐ3), tên miền/HTTPS (GĐ4) |
 | 1.2 | 24/10/2026 | Tổng hợp TD-0008 (GĐ3): Web Push chuẩn VAPID/RFC 8291 (EC qua openssl CLI, AES-128-GCM thuần Python đã kiểm chứng vector; khóa VAPID ngoài repo), API đăng ký/hủy/gửi thử push, hook thông báo tại tạo việc và các thao tác thẻ kênh, tổng kết ngày trong app (endpoint + thẻ Tổng quan + push/inbox 20:00 giờ VN chống gửi trùng). Kiểm thử: webapp 51/51, bot 215/215; app 0.3.0. Việc còn lại: chuyển đội + tắt dần bot (GĐ4; tên miền/HTTPS đã xong trước — TD-0007) |
+| 1.3 | 24/10/2026 | Tổng hợp TD-0007 (phần tên miền/HTTPS của GĐ4: post.iaict-platform.com qua Cloudflare Tunnel + 2 dịch vụ phụ trợ cf-dns-stub/cf-edge-relay do netstack máy chủ ảo), TD-0009 (sửa cache vỏ app network-first + SW v4, thẻ thông báo đẩy luôn hiện kèm trạng thái, bỏ hàng chip-nav trùng mobile, lọc việc theo trạng thái kèm counts, gọn block chọn file; bản 0.3.1), TD-0010 (thanh dưới mobile dạng nổi bo tròn, mục chọn viên thuốc teal nhạt, nút Giao việc tròn nổi; bản 0.3.2), TD-0011 (áp toàn bộ giao diện mới đã chốt: nav mobile 6 cột + nút Giao việc Mẫu 1 "Gradient viền trắng" 54px không đổ bóng nhô 19px, badge tròn 19×19, bảng "Thêm", collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống; bản 0.4.0, SW cache v6). Kiểm thử: webapp 53/53, bot 215/215; kiểm chứng hiển thị thật ở 320/360/390px và 1440px, sáng + tối. Việc còn lại: chuyển đội + tắt dần bot (GĐ4) |

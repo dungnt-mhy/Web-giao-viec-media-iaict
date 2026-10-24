@@ -115,7 +115,8 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   đăng nhập + `/api/health` trả 200.
 - Ảnh hưởng: SRS mục 7 (GĐ4: phần tên miền/HTTPS ✅ xong; còn chuyển đội
   sang Web App + tắt dần bot).
-- Trạng thái SRS: ⏳ Chờ tổng hợp khi đóng GĐ4.
+- Trạng thái SRS: ✅ Phần tên miền/HTTPS đã vào **SRS 1.3** (24/10/2026);
+  phần chuyển đội sang Web App + tắt dần bot vẫn chờ GĐ4.
 
 ### TD-0008 — GĐ3: Thông báo đẩy Web Push (VAPID) + tổng kết ngày trong Web App
 - Ngày: 24/10/2026
@@ -183,8 +184,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   hiển thị mục thông báo đẩy), 6 (API tasks thêm `counts`), giao diện
   mobile các màn Việc/Giao việc/Thông báo. Kiểm thử: thêm test API lọc
   `?status=` + counts vào bộ webapp; giữ nguyên toàn bộ test cũ hai bộ.
-- Trạng thái SRS: ⏳ Chờ tổng hợp (chưa vào SRS — để dành tổng hợp sau,
-  theo chỉ đạo đợt này).
+- Trạng thái SRS: ✅ Đã vào **SRS 1.3** (24/10/2026).
 - **Bổ sung (đính chính người dùng, cùng ngày)**: bỏ cách hiểu "chỉ
   mobile" — giao diện làm kỹ CẢ desktop lẫn mobile. Đã rà: desktop
   vốn không có chip-nav trùng (sidebar đầy đủ như thiết kế); block
@@ -207,14 +207,73 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   khoảng đệm cuối nội dung tăng để thanh nổi không che nội dung. Chỉ
   đổi CSS/HTML của bottom nav (mobile); sidebar desktop không đổi.
 - Ảnh hưởng: không đổi SRS (chỉ thẩm mỹ) — bản app 0.3.1 → 0.3.2.
-- Trạng thái SRS: ⏳ Chờ tổng hợp (mục thẩm mỹ, gộp cùng lần tới).
+- Trạng thái SRS: ✅ Đã vào **SRS 1.3** (24/10/2026).
+
+---
+
+### TD-0011 — Áp giao diện mới đã chốt (bản thiết kế mới) vào app thật, bản 0.4.0
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (nói "Chốt" sau khi duyệt
+  bản thiết kế mới qua mô phỏng bấm thử + chọn Mẫu 1 "Gradient viền
+  trắng" cho nút Giao việc vì đơn giản).
+- Nội dung thay đổi (CHỈ giao diện/bố cục, KHÔNG đổi API, schema,
+  audit/state semantics, phân quyền, logic nghiệp vụ):
+  (1) Ngôn ngữ thị giác mới: không gian thoáng hơn (thẻ bo 20px, đệm
+  lớn hơn, chữ tầng bậc rõ hơn), giữ tông teal chủ đạo; thẻ Chờ duyệt
+  màu hổ phách gắn nhãn Ưu tiên trên Tổng quan, thẻ Tổng kết hôm nay
+  thành hero (nền gradient teal), nút hành động chính nổi bật nhất.
+  (2) Scroll đúng chỗ: hàng chip lọc trượt ngang (có sẵn, giữ nguyên);
+  danh sách việc/chờ duyệt/lịch đăng cuộn dọc; bảng thống kê cuộn
+  ngang trên mobile (table-wrap có sẵn); dòng hoạt động trên Tổng
+  quan có vùng cuộn riêng.
+  (3) Collapse đúng chỗ: khối thông tin việc (Gợi ý/Tư liệu) và từng
+  thẻ kênh trên màn chi tiết gập/mở được; bộ lọc màn Việc gập/mở
+  được; thông báo gộp theo ngày, nhóm mới nhất mở sẵn, nhóm cũ bấm
+  mới mở; sidebar desktop có nút thu gọn thành thanh icon (lưu lựa
+  chọn vào localStorage).
+  (4) Thanh điều hướng mobile mới: lưới 6 cột đều nhau, thứ tự Tổng
+  quan, Việc, nút +, Chờ duyệt, Thông báo, Thêm (các mục theo quyền
+  như cũ: Chờ duyệt/Lịch đăng/Thống kê chỉ người duyệt, Người dùng
+  chỉ người quản lý; không đủ quyền thì mục đó không hiện). Nút +
+  nằm cạnh nút Việc, đúng Mẫu 1 đã chọn: hình tròn 54px (48px ở màn
+  ≤340px), nền teal chuyển sắc 140deg #1cc79b → #0da678 → #066e52,
+  viền trắng đặc 3px, vòng mỏng ngoài rgba(9,120,90,.16), KHÔNG đổ
+  bóng, dấu + trắng 28px nét 3.4, nhô lên khỏi mép thanh khoảng
+  19px, nhãn "Giao việc" teal đậm bên dưới, bấm mở wizard như cũ.
+  Nhãn 5 mục còn lại một dòng (9.5px, 8.5px ở màn ≤340px), không tách
+  từ, thẳng hàng. Badge thanh dưới: hình tròn 19×19 cố định, bo
+  50%, số chính giữa (hiển thị tối đa 99), không méo, không bị che;
+  thêm badge số thẻ chờ duyệt (lấy từ review-queue, chỉ hiển thị,
+  không đổi API). Nút "Thêm" mở bảng menu nổi với các mục còn lại
+  (Lịch đăng, Thống kê, Người dùng & phân quyền — theo quyền), icon
+  giống sidebar, mục đang chọn được đánh dấu, chạm ngoài/Esc đóng.
+  Bổ sung sau khi kiểm chứng hiển thị: `navigate()` luôn đóng bảng
+  "Thêm" trước khi đổi màn, vì scrim của bảng không che topbar nên
+  bấm chuông khi bảng đang mở sẽ đổi màn mà bảng vẫn kẹt lại phía
+  trên màn mới.
+  (5) Wizard giao việc 3 bước: vừa đúng chiều rộng mobile (không
+  tràn ngang); chân wizard đổi bố cục: nút chính (Tiếp tục, bước
+  cuối là Chốt! Gửi Muse) nằm TRÊN cùng full-width nổi bật nhất,
+  các nút phụ (Huỷ việc, Quay lại) nằm dưới thành hàng gọn.
+  (6) Sáng/tối theo hệ thống (prefers-color-scheme) cho cả mobile
+  lẫn desktop, đủ biến màu cho cả hai chế độ.
+  (7) Version + cache: bản app 0.3.2 → 0.4.0, cập nhật nhất quán ở
+  mọi nơi (VERSION, APP_VERSION, index.html + sw.js ?v=0.4.0, SW
+  cache v6, dòng "Phiên bản 0.4.0" hiển thị trong app); shell giữ
+  network-first để người dùng nhận giao diện mới ngay.
+- Ảnh hưởng: không đổi SRS về hành vi (chỉ thẩm mỹ/bố cục) — bản app
+  0.3.2 → 0.4.0. Kiểm thử: giữ nguyên 2 bộ (webapp 52/52, bot
+  215/215) + thêm test cho version 0.4.0, nav mới và wizard footer
+  mới ở mức tĩnh (HTML/JS phục vụ). Sao lưu trước khi sửa tại
+  data/backup-ui40-20261024-112524/ (bản sao webapp + bot.db).
+- Trạng thái SRS: ✅ Đã vào **SRS 1.3** (24/10/2026).
 
 ---
 
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
-- **TD-0007** — ⏳ Chờ tổng hợp vào SRS khi đóng GĐ4 (phần tên miền/HTTPS đã xong 24/10/2026).
-- **TD-0010** — ⏳ Chờ tổng hợp (làm đẹp bottom nav mobile, bản 0.3.2).
+- **TD-0007** — ✅ Đã tổng hợp phần tên miền/HTTPS vào **SRS 1.3** ngày 24/10/2026 (phần chuyển đội + tắt dần bot vẫn chờ GĐ4).
+- **TD-0010** — ✅ Đã tổng hợp vào **SRS 1.3** ngày 24/10/2026 (thanh dưới mobile dạng nổi bo tròn, bản 0.3.2).
 - **TD-0008** — ✅ Đã tổng hợp vào **SRS 1.2** ngày 24/10/2026 (đóng GĐ3).
-- **TD-0009** — ⏳ Chờ tổng hợp (sửa giao diện mobile: thông báo đẩy/cache SW v4, bỏ trùng menu, lọc việc theo trạng thái, gọn block chọn file; 24/10/2026).
+- **TD-0009** — ✅ Đã tổng hợp vào **SRS 1.3** ngày 24/10/2026 (sửa giao diện mobile: thông báo đẩy/cache SW v4, bỏ trùng menu, lọc việc theo trạng thái, gọn block chọn file; bản 0.3.1).
+- **TD-0011** — ✅ Đã tổng hợp vào **SRS 1.3** ngày 24/10/2026 (áp giao diện mới đã chốt: nav mobile 6 cột + nút Giao việc Mẫu 1, collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống; bản 0.4.0).

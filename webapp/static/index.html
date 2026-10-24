@@ -9,7 +9,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/styles.css?v=0.3.2">
+  <link rel="stylesheet" href="/styles.css?v=0.4.0">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -58,6 +58,7 @@
         <button id="passwordBtn" class="icon-btn" title="Đổi mật khẩu" aria-label="Đổi mật khẩu">🔐</button>
         <button id="logoutBtn" class="icon-btn" title="Đăng xuất" aria-label="Đăng xuất">🚪</button>
       </div>
+      <button id="sideCollapseBtn" class="side-collapse" title="Thu gọn sidebar" aria-label="Thu gọn sidebar">◀ Thu gọn</button>
     </aside>
 
     <div class="main-column">
@@ -77,9 +78,11 @@
     </div>
 
     <nav id="bottomNav" class="bottom-nav" aria-label="Điều hướng dưới"></nav>
+    <div id="moreScrim" class="more-scrim" hidden></div>
+    <div id="moreSheet" class="more-sheet" role="menu" aria-label="Menu thêm" hidden></div>
   </div>
 
   <div id="modalRoot"></div>
-  <script src="/app.js?v=0.3.2" defer></script>
+  <script src="/app.js?v=0.4.0" defer></script>
 </body>
 </html>
