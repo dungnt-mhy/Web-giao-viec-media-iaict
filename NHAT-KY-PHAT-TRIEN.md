@@ -644,3 +644,30 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
 - Kiểm thử: webapp 58/58 (57 cũ + 1 mới cho nút đóng), bot 242/242;
   health local + public 0.5.3, login public 200, đủ 5 service active,
   asset public ?v=0.5.3 chứa dấu vết mới, SW cache v11.
+
+## TD-0017 — botctl đăng/thu hồi gửi kèm Web Push (bản 0.5.4, 24/10/2026)
+- Vấn đề: sự kiện đăng/thu hồi qua botctl chỉ ghi hàng inbox, không
+  gửi push nên điện thoại không buzz (người dùng đã đọc được hàng
+  inbox nhưng không nhận buzz; hộp inbox tự nó vẫn hoạt động).
+- Sửa: `_notify_web` sau khi ghi hàng đồng thời gửi Web Push tới MỌI
+  subscription (khớp tính global của hàng inbox). Payload đúng dạng
+  SW GĐ3 hiển thị được: {title, body, url} với url = /?task=<mã>.
+  Tái sử dụng send_to_subscription của webapp/push.py (import qua
+  sys.path, guard lỗi → cảnh báo + chỉ ghi hàng); KHÔNG copy crypto;
+  KHÔNG tự tạo vapid.json nếu thiếu (khóa mới sẽ hỏng mọi
+  subscription cũ). --no-notify tắt cả Telegram, hàng web và push;
+  thiếu token Telegram không chặn push web; lỗi push chỉ cảnh báo
+  stderr, không hỏng exit code; không có subscription thì gửi 0 cái.
+  Log chỉ đếm sent/failed/gone, không in endpoint/khóa/payload.
+  Thêm WebDB.push_subscriptions_all() (cộng thêm) và điểm chích test
+  `_WEB_PUSH_SENDER` trong botctl; `_notify_web` nhận thêm task_code
+  tùy chọn (6 điểm gọi truyền args.task_code).
+- Kiểm thử: webapp 58/58, bot 251/251 (242 cũ + 3 test mới × 3 lớp:
+  push đủ payload/đối tượng, --no-notify tắt push, lỗi sender không
+  hỏng lệnh, đường thật thiếu vapid chỉ cảnh báo). Probe trên bản
+  sao DB thật: publish từng phần/lỗi/đủ + thu hồi từng phần/đủ →
+  5 lần gọi push đúng title/body/url + 5 hàng inbox, trạng thái cuối
+  RETRACTED; DB thật sha không đổi; lookup subscription thật trả về
+  đúng Admin (không in endpoint); vapid.json mode 600.
+- Public: health local + public 0.5.4, login 200, SW cache v12, đủ 5
+  service active, bot long polling.

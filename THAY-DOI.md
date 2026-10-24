@@ -490,6 +490,38 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0017 — botctl đăng/thu hồi gửi kèm Web Push (bản 0.5.4)
+- Ngày: 24/10/2026 — Nguồn: người dùng phản hồi (sự kiện đăng thật
+  không làm điện thoại buzz; hộp inbox web vẫn có hàng nên lỗi chỉ
+  là thiếu push, không phải thiếu inbox).
+- Nội dung thay đổi: `_notify_web` trong botctl sau khi ghi hàng
+  web_notification_items đồng thời gửi Web Push tới MỌI subscription
+  trong web_push_subscriptions — khớp tính global của hàng inbox
+  (hàng ai cũng thấy thì push cũng tới mọi người đăng ký; không thu
+  hẹp lặng lẽ). Payload đúng dạng service worker GĐ3 hiển thị được:
+  {title, body, url} với url = /?task=<mã việc>. Tái sử dụng
+  send_to_subscription của webapp/push.py (import qua sys.path tới
+  thư mục webapp, guard lỗi → cảnh báo + chỉ ghi hàng); KHÔNG copy
+  code crypto sang botctl; KHÔNG tự tạo vapid.json nếu thiếu (tạo
+  khóa mới sẽ làm hỏng mọi subscription cũ — thiếu file thì cảnh
+  báo + bỏ qua push). --no-notify tắt cả Telegram, hàng web và push;
+  thiếu token Telegram không chặn push web; lỗi push chỉ cảnh báo
+  stderr, không làm hỏng exit code hay luồng chính; không có
+  subscription thì gửi 0 cái, không lỗi. Log chỉ đếm sent/failed/
+  gone, không in endpoint, khóa hay payload.
+- Kỹ thuật: thêm WebDB.push_subscriptions_all() (webapp/db.py, cộng
+  thêm); botctl thêm `_WEB_PUSH_SENDER` (điểm chích cho test) +
+  `_send_web_push`/`_web_push_service`; `_notify_web` thêm tham số
+  task_code tùy chọn để làm deep-link (6 điểm gọi truyền
+  args.task_code).
+- Ảnh hưởng: botctl + webapp/db.py (cộng thêm); không đổi nội dung/
+  cơ chế thông báo Telegram, định dạng hàng inbox, phân quyền, luồng
+  đăng/thu hồi, logic target Facebook. Bản 0.5.3 → 0.5.4 (VERSION,
+  APP_VERSION, ?v=0.5.4, SW cache v12).
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

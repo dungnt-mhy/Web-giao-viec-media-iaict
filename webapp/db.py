@@ -613,6 +613,16 @@ class WebDB:
                 f" WHERE user_id IN ({marks}) ORDER BY id", ids
             ).fetchall()
 
+    def push_subscriptions_all(self):
+        """Every push subscription, for global events (TD-0017).
+
+        The web inbox row for botctl publish/retract events is
+        global, so its push goes to every subscriber, not one user."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM web_push_subscriptions ORDER BY id"
+            ).fetchall()
+
     # ------------------------------------- GĐ3: explicit inbox items
     def add_notification_item(self, key: str, kind: str, title: str,
                               body: str, created_at: str | None = None
