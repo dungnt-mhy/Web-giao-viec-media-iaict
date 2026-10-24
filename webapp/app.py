@@ -1,4 +1,4 @@
-"""Web App Giao Việc — HTTP API server (Giai đoạn 1 + 2).
+"""Web App Giao Việc — HTTP API server (Giai đoạn 1 + 2 + 3).
 
 Pure Python stdlib (``http.server.ThreadingHTTPServer``). All business
 rules come from the bot project: ``storage.Store`` for data, ``roles``
@@ -14,6 +14,13 @@ a derived notifications inbox, password change, PWA static serving
 and permission-checked material downloads (with HTTP Range support
 so draft videos play in the browser).
 
+GĐ3 adds: real Web Push notifications (VAPID/RFC 8291, see
+``webapp/push.py``) fired from task creation and the output actions,
+push subscription endpoints, a daily-summary endpoint + overview
+card, and a background thread that at 20:00 Vietnam time each day
+pushes the daily summary to Admins and drops it into every user's
+in-app inbox (once per day, gated by a persisted date in web_meta).
+
 Run:  python3 -m webapp.app     (port: $WEBAPP_PORT, default 8790)
 """
 
@@ -26,6 +33,8 @@ import os
 import re
 import shutil
 import tempfile
+import threading
+import time
 import warnings
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
@@ -37,6 +46,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import VERSION
 from .auth import hash_password, new_session_token, verify_password
 from .db import WebDB, bot_dir, default_db_path, import_bot_modules
+from .push import PushService, default_vapid_path
 
 storage, roles, stats = import_bot_modules()
 
@@ -193,6 +203,15 @@ class App:
         self.webdb = WebDB(self.db_path)
         self.store = storage.Store(self.db_path)
         self.files_dir = Path(files_dir or default_files_dir())
+        # Web Push is best-effort infrastructure: if the VAPID keys
+        # cannot be loaded/created the app still serves everything
+        # else and the push endpoints answer 503.
+        try:
+            self.push = PushService(self.webdb,
+                                    default_vapid_path(self.db_path))
+        except Exception as err:  # noqa: BLE001 - degrade, never crash
+            print(f"Web Push disabled: {type(err).__name__}: {err}")
+            self.push = None
 
     def close(self) -> None:
         self.store.close()
@@ -403,6 +422,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._notifications()
             if method == "POST" and path == "/api/notifications/read":
                 return self._notifications_read()
+            if method == "GET" and path == "/api/push/vapid-public-key":
+                return self._push_vapid_key()
+            if method == "POST" and path == "/api/push/subscribe":
+                return self._push_subscribe()
+            if method == "POST" and path == "/api/push/unsubscribe":
+                return self._push_unsubscribe()
+            if method == "POST" and path == "/api/push/test":
+                return self._push_test()
+            if method == "GET" and path == "/api/stats/daily-summary":
+                return self._stats_daily_summary()
             if method == "GET" and path == "/api/stats/summary":
                 return self._stats_summary(query)
             if method == "GET" and path == "/api/stats/export":
@@ -834,6 +863,12 @@ class Handler(BaseHTTPRequestHandler):
         outputs = self.app.store.sync_outputs_for_task(task)
         task = self.app.store.get_task(task["code"])
         creator = self.app.store.get_user(task["creator_id"])
+        # GĐ3: a new task means reviewers will have drafts to check.
+        self._notify_async(
+            self._reviewer_ids(exclude=user["telegram_id"]),
+            f"🗂 Việc mới {task['code']}",
+            hint or "(chưa có gợi ý)",
+            f"/?task={task['code']}")
         self._send_json(HTTPStatus.CREATED, {
             "task": task_public(
                 task,
@@ -924,6 +959,11 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], "submit_output", "output", output["id"],
             detail=f"task={task['code']} channel={output['channel']}")
         self.app.store.sync_task_status_from_outputs(task["code"])
+        self._notify_async(
+            self._reviewer_ids(exclude=user["telegram_id"]),
+            "⏳ Thẻ kênh chờ duyệt",
+            f"{task['code']} · {storage.channel_label(output['channel'])}",
+            f"/?task={task['code']}")
         self._done(output["id"], "Đã gửi duyệt.")
 
     def _act_approve(self, user, output, task, body):
@@ -938,6 +978,12 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], "approve_output", "output", output["id"],
             detail=f"task={task['code']} channel={output['channel']}")
         self.app.store.sync_task_status_from_outputs(task["code"])
+        if task["creator_id"] != user["telegram_id"]:
+            self._notify_async(
+                [task["creator_id"]], "✅ Thẻ kênh đã được duyệt",
+                f"{task['code']} · "
+                f"{storage.channel_label(output['channel'])}",
+                f"/?task={task['code']}")
         self._done(output["id"], "Đã duyệt, thẻ kênh chuyển sang chờ đăng.")
 
     def _reason(self, body) -> str:
@@ -966,6 +1012,12 @@ class Handler(BaseHTTPRequestHandler):
             detail=f"task={task['code']} channel={output['channel']} "
                    f"reason={reason}")
         self.app.store.sync_task_status_from_outputs(task["code"])
+        if task["creator_id"] != user["telegram_id"]:
+            self._notify_async(
+                [task["creator_id"]], "↩️ Thẻ kênh bị trả lại",
+                f"{task['code']} · "
+                f"{storage.channel_label(output['channel'])}: {reason}",
+                f"/?task={task['code']}")
         self._done(output["id"], "Đã trả lại kèm yêu cầu chỉnh sửa.")
 
     def _act_revise(self, user, output, task, body):
@@ -1049,6 +1101,13 @@ class Handler(BaseHTTPRequestHandler):
             detail += f" target={target}"
         self.app.store.audit(user["telegram_id"], "publish_requested",
                              "output", output["id"], detail=detail)
+        body_text = (f"{task['code']} · "
+                     f"{storage.channel_label(output['channel'])}")
+        if target:
+            body_text += f" · nơi đăng: {target}"
+        self._notify_async(
+            self._reviewer_ids(exclude=user["telegram_id"]),
+            "🚀 Có lệnh đăng mới", body_text, f"/?task={task['code']}")
         self._done(output["id"],
                    "Đã nhận lệnh đăng — Muse sẽ đăng ngay và gửi "
                    "link bài khi xong.")
@@ -1217,6 +1276,13 @@ class Handler(BaseHTTPRequestHandler):
             detail += f" target={target}"
         self.app.store.audit(user["telegram_id"], "schedule_set",
                              "output", output["id"], detail=detail)
+        if task["creator_id"] != user["telegram_id"]:
+            self._notify_async(
+                [task["creator_id"]], "🕐 Đã đặt lịch đăng",
+                f"{task['code']} · "
+                f"{storage.channel_label(output['channel'])} · "
+                f"{when.strftime('%H:%M %d/%m/%Y')}",
+                f"/?task={task['code']}")
         self._done(output["id"], "Đã đặt lịch đăng.",
                    extra={"warnings": warnings, "scheduled_at": when_utc})
 
@@ -1258,6 +1324,11 @@ class Handler(BaseHTTPRequestHandler):
                 output["id"],
                 detail=f"task={task['code']} channel=facebook "
                        f"public_url={output['public_url']}")
+            self._notify_async(
+                self._reviewer_ids(exclude=user["telegram_id"]),
+                "↩️ Yêu cầu thu hồi bài Facebook",
+                f"{task['code']} · {output['public_url']}",
+                f"/?task={task['code']}")
             return self._done(
                 output["id"],
                 "Đã nhận lệnh thu hồi — Muse sẽ xoá bài thật "
@@ -1268,6 +1339,12 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], "retract_output", "output", output["id"],
             detail=f"task={task['code']} channel={output['channel']}")
         self.app.store.sync_task_status_from_outputs(task["code"])
+        if task["creator_id"] != user["telegram_id"]:
+            self._notify_async(
+                [task["creator_id"]], "🗑 Bài đã bị thu hồi",
+                f"{task['code']} · "
+                f"{storage.channel_label(output['channel'])}",
+                f"/?task={task['code']}")
         self._done(output["id"], "Đã thu hồi.")
 
     # ------------------------------------------- queues / notifications
@@ -1314,7 +1391,122 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], keys)
         self._send_json(HTTPStatus.OK, {"ok": True, "marked": marked})
 
+    # ------------------------------------------- GĐ3: push plumbing
+    def _reviewer_ids(self, exclude=None) -> list:
+        return [u["telegram_id"] for u in self.app.store.list_users()
+                if roles.can_review(u["role"])
+                and u["telegram_id"] != exclude]
+
+    def _admin_ids(self) -> list:
+        return [u["telegram_id"] for u in self.app.store.list_users()
+                if u["role"] == roles.ROLE_ADMIN]
+
+    def _notify_async(self, user_ids, title: str, body: str,
+                      url: str = "/") -> None:
+        """Fire-and-forget Web Push from a background thread: a slow
+        or failing push service must never delay or break the request
+        that triggered the notification."""
+        service = self.app.push
+        ids = [u for u in dict.fromkeys(user_ids or [])]
+        if service is None or not ids:
+            return
+
+        def _send():
+            try:
+                service.notify_users(ids, title, body, url)
+            except Exception:  # notify_users already swallows; be safe
+                pass
+
+        threading.Thread(target=_send, daemon=True,
+                         name="webapp-push").start()
+
+    def _require_push(self) -> None:
+        if self.app.push is None:
+            raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE,
+                           "Thông báo đẩy chưa khả dụng trên máy chủ.")
+
+    def _push_vapid_key(self) -> None:
+        self._current_user()
+        self._require_push()
+        self._send_json(HTTPStatus.OK,
+                        {"public_key": self.app.push.public_key})
+
+    @staticmethod
+    def _validate_endpoint(endpoint) -> str:
+        endpoint = str(endpoint or "").strip()
+        parsed = urlparse(endpoint)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme == "https" and host:
+            return endpoint
+        if parsed.scheme == "http" and host in ("127.0.0.1", "localhost",
+                                                "::1"):
+            return endpoint  # loopback endpoints: tests/dev only
+        raise ApiError(HTTPStatus.BAD_REQUEST,
+                       "endpoint thông báo đẩy không hợp lệ.")
+
+    def _push_subscribe(self) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        self._require_push()
+        from .push import b64url_decode
+
+        body = self._read_json()
+        endpoint = self._validate_endpoint(body.get("endpoint"))
+        keys = body.get("keys") or {}
+        p256dh = str(keys.get("p256dh") or "")
+        auth = str(keys.get("auth") or "")
+        try:
+            point = b64url_decode(p256dh)
+            auth_bytes = b64url_decode(auth)
+        except Exception:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Khóa đăng ký thông báo đẩy không hợp lệ.")
+        if len(point) != 65 or point[0] != 0x04 or len(auth_bytes) < 16:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Khóa đăng ký thông báo đẩy không hợp lệ.")
+        row = self.app.webdb.upsert_push_subscription(
+            user["telegram_id"], endpoint, p256dh, auth,
+            user_agent=(self.headers.get("User-Agent") or "")[:300])
+        self._send_json(HTTPStatus.OK, {
+            "ok": True, "id": row["id"], "endpoint": row["endpoint"],
+        })
+
+    def _push_unsubscribe(self) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        body = self._read_json()
+        endpoint = str(body.get("endpoint") or "").strip()
+        if not endpoint:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "Thiếu endpoint.")
+        removed = self.app.webdb.delete_push_subscription(
+            endpoint, user_id=user["telegram_id"])
+        self._send_json(HTTPStatus.OK, {"ok": True, "removed": removed})
+
+    def _push_test(self) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        self._require_push()
+        results = self.app.push.notify_user_detailed(
+            user["telegram_id"], "🔔 Thông báo thử",
+            "Web App Giao Việc gửi thông báo đẩy thử — bạn đã bật "
+            "thông báo thành công.", "/")
+        self._send_json(HTTPStatus.OK, {
+            "ok": True,
+            "sent": sum(1 for r in results if r["ok"]),
+            "results": [{
+                "endpoint": r["endpoint"], "ok": r["ok"],
+                "status": r["status"], "gone": r["gone"],
+                "error": r["error"],
+            } for r in results],
+        })
+
     # -------------------------------------------------------------- stats
+    def _stats_daily_summary(self) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        self._send_json(HTTPStatus.OK,
+                        daily_summary_data(self.app.store))
+
     def _stats_summary(self, query: dict) -> None:
         user = self._current_user()
         if not roles.can_review(user["role"]):
@@ -1478,6 +1670,90 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.OK, {"user": user_public(updated)})
 
 
+# ------------------------------------------------- GĐ3: daily summary
+def daily_summary_data(store, now=None) -> dict:
+    """Today's numbers (Vietnam time), shared by the API endpoint,
+    the overview card and the 20:00 digest. "Đã đăng hôm nay" counts
+    outputs whose publish moment is today; "chờ duyệt / chờ đăng"
+    are current totals, exactly like the bot's daily summary."""
+    now = now or datetime.now(ICT)
+    data = stats.collect_stats(store, "today", now)
+    by_status: dict = {}
+    for per_channel in data["output_channel_status"].values():
+        for status, count in per_channel.items():
+            by_status[status] = by_status.get(status, 0) + count
+    current = {}
+    for _channel, status, count in store.count_outputs_by_status():
+        current[status] = current.get(status, 0) + count
+    return {
+        "date": now.strftime("%Y-%m-%d"),
+        "label": data["label"],
+        "tasks_created": len(data["tasks"]),
+        "outputs_total": len(data["outputs"]),
+        "outputs_by_status": by_status,
+        "published_today": len(data["published"]),
+        "pending_review": current.get(storage.STATUS_PENDING, 0),
+        "approved_waiting": current.get(
+            storage.STATUS_APPROVED_WAITING, 0),
+    }
+
+
+def daily_summary_lines(data: dict, now: datetime):
+    """Title + body lines mirroring the bot's 20:00 Telegram digest."""
+    title = f"🌆 Tổng kết ngày {now.strftime('%d/%m/%Y')}"
+    lines = [
+        f"🗂 Việc tạo hôm nay: {data['tasks_created']}",
+        f"🚀 Đầu ra đã đăng hôm nay: {data['published_today']}",
+        f"⏳ Đang chờ duyệt: {data['pending_review']} đầu ra",
+        f"🕐 Đang chờ đăng: {data['approved_waiting']} đầu ra",
+    ]
+    return title, lines
+
+
+#: web_meta key holding the date of the last in-app daily summary.
+DAILY_SUMMARY_META_KEY = "web_daily_summary_date"
+
+
+def maybe_send_daily_summary(app: App, now=None) -> bool:
+    """The 20:00 digest, web-app edition: once a day, at/after
+    20:00 Vietnam time, push the summary to subscribed Admins and
+    add it to every user's in-app inbox. The sent date is persisted
+    in web_meta so restarts never re-send. Returns True when sent."""
+    now = now or datetime.now(ICT)
+    if now.hour < 20:
+        return False
+    today = now.strftime("%Y-%m-%d")
+    if app.webdb.get_meta(DAILY_SUMMARY_META_KEY) == today:
+        return False
+    data = daily_summary_data(app.store, now)
+    title, lines = daily_summary_lines(data, now)
+    app.webdb.add_notification_item(
+        key=f"daily-summary:{today}", kind="daily_summary",
+        title=title, body="\n".join(lines),
+        created_at=now.astimezone(timezone.utc).isoformat(
+            timespec="seconds"))
+    if app.push is not None:
+        try:
+            admin_ids = [u["telegram_id"]
+                         for u in app.store.list_users()
+                         if u["role"] == roles.ROLE_ADMIN]
+            app.push.notify_users(admin_ids, title, " · ".join(lines),
+                                  "/")
+        except Exception:  # push is best-effort; the inbox item stays
+            pass
+    app.webdb.set_meta(DAILY_SUMMARY_META_KEY, today)
+    return True
+
+
+def _daily_summary_loop(app: App, interval: int = 60) -> None:
+    while True:
+        try:
+            maybe_send_daily_summary(app)
+        except Exception as err:  # the loop must survive anything
+            print(f"daily summary check failed: {err}")
+        time.sleep(interval)
+
+
 def make_server(host: str, port: int, app: App) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), Handler)
     server.app = app  # type: ignore[attr-defined]
@@ -1490,6 +1766,8 @@ def main() -> None:
     port = int(os.environ.get("WEBAPP_PORT", "8790"))
     app = App()
     server = make_server(host, port, app)
+    threading.Thread(target=_daily_summary_loop, args=(app,),
+                     daemon=True, name="webapp-daily-summary").start()
     print(f"Web App Giao Việc v{VERSION} — http://{host}:{port} "
           f"(db: {app.db_path})")
     try:

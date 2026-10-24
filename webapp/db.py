@@ -151,6 +151,35 @@ class WebDB:
                 )
                 """
             )
+            # Giai đoạn 3 additions: Web Push subscriptions (one row
+            # per browser endpoint; the endpoint is globally unique,
+            # re-subscribing reassigns it to the current user) and
+            # explicit inbox items (e.g. the 20:00 daily summary) that
+            # are merged into the derived notifications inbox.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+                    id         INTEGER PRIMARY KEY,
+                    user_id    INTEGER NOT NULL,
+                    endpoint   TEXT NOT NULL UNIQUE,
+                    p256dh     TEXT NOT NULL,
+                    auth       TEXT NOT NULL,
+                    user_agent TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_notification_items (
+                    key        TEXT PRIMARY KEY,
+                    kind       TEXT NOT NULL,
+                    title      TEXT NOT NULL,
+                    body       TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
 
     # -------------------------------------------------------------- users
     def get_user(self, user_id: int):
@@ -483,6 +512,21 @@ class WebDB:
                     "retracted", "Bài đã bị thu hồi", label, stamp,
                     output, aid)
 
+        # Explicit global inbox items (GĐ3: the 20:00 daily summary
+        # and any future announcements) are shown to every user.
+        with self._lock:
+            global_rows = self._conn.execute(
+                "SELECT * FROM web_notification_items"
+                " ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        for row in global_rows:
+            items.append({
+                "key": row["key"], "kind": row["kind"],
+                "title": row["title"], "body": row["body"],
+                "created_at": row["created_at"], "task_code": None,
+                "output_id": None, "channel": None, "audit_id": None,
+            })
+
         items.sort(key=lambda item: item["created_at"] or "", reverse=True)
         items = items[:limit]
         with self._lock:
@@ -505,3 +549,79 @@ class WebDB:
                     " (user_id, notification_key, read_at)"
                     " VALUES (?, ?, ?)", (user_id, str(key), now))
         return len(list(keys))
+
+    # ------------------------------------- GĐ3: Web Push subscriptions
+    def upsert_push_subscription(self, user_id: int, endpoint: str,
+                                 p256dh: str, auth: str,
+                                 user_agent: str | None = None):
+        """Insert or refresh the subscription for ``endpoint``; the
+        endpoint is globally unique, so re-subscribing (possibly by
+        another user of the same browser profile) moves it."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO web_push_subscriptions
+                    (user_id, endpoint, p256dh, auth, user_agent,
+                     created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(endpoint) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    p256dh = excluded.p256dh,
+                    auth = excluded.auth,
+                    user_agent = excluded.user_agent
+                """,
+                (user_id, endpoint, p256dh, auth, user_agent,
+                 _iso(_utcnow())),
+            )
+            return self._conn.execute(
+                "SELECT * FROM web_push_subscriptions WHERE endpoint = ?",
+                (endpoint,),
+            ).fetchone()
+
+    def delete_push_subscription(self, endpoint: str,
+                                 user_id: int | None = None) -> int:
+        """Delete by endpoint; when ``user_id`` is given only that
+        user's own subscription can be removed (manual unsubscribe),
+        otherwise any owner matches (push service said 404/410)."""
+        with self._lock, self._conn:
+            if user_id is None:
+                cursor = self._conn.execute(
+                    "DELETE FROM web_push_subscriptions WHERE endpoint = ?",
+                    (endpoint,))
+            else:
+                cursor = self._conn.execute(
+                    "DELETE FROM web_push_subscriptions"
+                    " WHERE endpoint = ? AND user_id = ?",
+                    (endpoint, user_id))
+        return cursor.rowcount
+
+    def push_subscriptions_for_user(self, user_id: int):
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM web_push_subscriptions WHERE user_id = ?"
+                " ORDER BY id", (user_id,)
+            ).fetchall()
+
+    def push_subscriptions_for_users(self, user_ids):
+        ids = [int(u) for u in dict.fromkeys(user_ids)]
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM web_push_subscriptions"
+                f" WHERE user_id IN ({marks}) ORDER BY id", ids
+            ).fetchall()
+
+    # ------------------------------------- GĐ3: explicit inbox items
+    def add_notification_item(self, key: str, kind: str, title: str,
+                              body: str, created_at: str | None = None
+                              ) -> bool:
+        """Insert a global inbox item; False when the key exists."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT OR IGNORE INTO web_notification_items"
+                " (key, kind, title, body, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (key, kind, title, body, created_at or _iso(_utcnow())))
+        return cursor.rowcount > 0

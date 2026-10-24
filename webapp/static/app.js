@@ -209,7 +209,10 @@ function showApp() {
   $("#sideAvatar").textContent = (me.display_name || "?").trim().charAt(0).toUpperCase();
   $("#sideUserName").textContent = me.display_name;
   $("#sideUserRole").textContent = `${me.role_title}${me.can_publish ? " · có quyền đăng" : ""}`;
-  navigate("dashboard");
+  // Push notifications deep-link with ?task=CV-xxxx: open that task.
+  const taskParam = new URLSearchParams(location.search).get("task");
+  if (taskParam) navigate("detail", taskParam);
+  else navigate("dashboard");
 }
 
 async function boot() {
@@ -331,12 +334,13 @@ $("#passwordBtnMobile").addEventListener("click", passwordModal);
 
 async function renderDashboard() {
   const me = state.me;
-  const [tasks, notifications, review, scheduled, statsData] = await Promise.all([
+  const [tasks, notifications, review, scheduled, statsData, daily] = await Promise.all([
     api("/api/tasks?limit=100"),
     api("/api/notifications").catch(() => ({ items: [], unread: 0 })),
     me.can_review ? api("/api/review-queue").catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
     me.can_review ? api("/api/scheduled").catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
     me.can_review ? api("/api/stats/summary?period=all").catch(() => null) : Promise.resolve(null),
+    api("/api/stats/daily-summary").catch(() => null),
   ]);
   updateBadges(notifications.unread);
   const working = tasks.items.filter((t) => ["DRAFT", "PENDING"].includes(t.status)).length;
@@ -352,6 +356,12 @@ async function renderDashboard() {
       <div class="card metric"><span>🕐 Bài đang đặt lịch</span><strong>${scheduled.items.length}</strong><span>${nextSchedule ? `Sắp nhất: ${fmtTime(nextSchedule.scheduled_at)}` : "Chưa có lịch"}</span></div>
       <div class="card metric"><span>✅ Đầu ra đã đăng</span><strong>${statsData ? statsData.published_total : "—"}</strong><span>${statsData ? `trên tổng ${statsData.outputs_total} đầu ra` : "Thống kê dành cho người duyệt"}</span></div>
     </div>
+    ${daily ? `
+    <section class="card" style="margin-top:1rem">
+      <div class="row-item"><h3>🌆 Tổng kết hôm nay</h3><span class="pill info">${esc(daily.label)}</span></div>
+      <p class="meta-line">🗂 Việc tạo mới: <strong>${daily.tasks_created}</strong> · 🚀 Đã đăng: <strong>${daily.published_today}</strong> · ⏳ Đang chờ duyệt: <strong>${daily.pending_review}</strong> đầu ra · 🕐 Đang chờ đăng: <strong>${daily.approved_waiting}</strong> đầu ra</p>
+      <p class="meta-line">${Object.entries(daily.outputs_by_status || {}).map(([s, n]) => `<span class="channel-chip">${esc(STATUS_LABELS[s] || s)}: ${n}</span>`).join(" ") || "Chưa có đầu ra nào hôm nay."}</p>
+    </section>` : ""}
     <div class="grid grid-2" style="margin-top:1rem">
       <section class="card">
         <div class="row-item"><h3>🕘 Việc gần đây</h3><button class="btn btn-small" data-go="tasks">Xem tất cả</button></div>
@@ -1046,8 +1056,9 @@ function notificationRow(item) {
   const icons = {
     review_pending: "⏳", rejected: "↩️", revision_requested: "✏️",
     draft_ready: "📄", published: "✅", retracted: "🗑",
+    daily_summary: "🌆",
   };
-  return `<button class="card notification ${item.read ? "" : "unread"}" data-notification="${esc(item.key)}" data-code="${esc(item.task_code)}">
+  return `<button class="card notification ${item.read ? "" : "unread"}" data-notification="${esc(item.key)}" data-code="${esc(item.task_code || "")}">
     <span class="dot"></span>
     <span class="row-main"><strong>${icons[item.kind] || "🔔"} ${esc(item.title)}</strong>
     <br><span class="muted">${esc(item.body)}</span>
@@ -1060,8 +1071,87 @@ function bindNotificationRows(root = document) {
     try {
       await apiJson("/api/notifications/read", "POST", { keys: [el.dataset.notification] });
     } catch {}
-    navigate("detail", el.dataset.code);
+    if (el.dataset.code) navigate("detail", el.dataset.code);
+    else if (state.route === "notifications") renderNotifications();
+    else refreshBadge();
   }));
+}
+
+/* --------------------- Web Push (GĐ3) --------------------- */
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const raw = atob((base64String + padding).replaceAll("-", "+").replaceAll("_", "/"));
+  return Uint8Array.from([...raw].map((ch) => ch.charCodeAt(0)));
+}
+
+async function initPushPanel() {
+  const box = $("#pushState");
+  const enableBtn = $("#pushEnable");
+  const disableBtn = $("#pushDisable");
+  const testBtn = $("#pushTest");
+  if (!box) return;
+  const supported = "serviceWorker" in navigator && "PushManager" in window
+    && "Notification" in window;
+  if (!supported) {
+    box.textContent = "Trình duyệt này không hỗ trợ thông báo đẩy (cần HTTPS và trình duyệt hiện đại).";
+    return;
+  }
+  const registration = await navigator.serviceWorker.ready;
+  const refresh = async () => {
+    const sub = await registration.pushManager.getSubscription();
+    if (Notification.permission === "denied") {
+      box.innerHTML = "⚠️ Bạn đã chặn thông báo cho trang này — hãy mở cài đặt trình duyệt, cho phép thông báo cho <strong>post.iaict-platform.com</strong> rồi quay lại bật.";
+      enableBtn.hidden = true; disableBtn.hidden = true; testBtn.hidden = true;
+      return;
+    }
+    if (sub) {
+      box.textContent = "✅ Đang bật trên thiết bị này — việc mới, chờ duyệt, đã đăng… sẽ hiện ngay cả khi đóng app.";
+      enableBtn.hidden = true; disableBtn.hidden = false; testBtn.hidden = false;
+    } else {
+      box.textContent = "Đang tắt trên thiết bị này. Bật để nhận việc mới, thẻ chờ duyệt, bài đã đăng… ngay cả khi đóng app.";
+      enableBtn.hidden = false; disableBtn.hidden = true; testBtn.hidden = true;
+    }
+  };
+  enableBtn.addEventListener("click", async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { await refresh(); return; }
+      const { public_key } = await api("/api/push/vapid-public-key");
+      const sub = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(public_key),
+      });
+      await apiJson("/api/push/subscribe", "POST", sub.toJSON());
+      toast("Đã bật thông báo đẩy trên thiết bị này.");
+    } catch (err) {
+      toast(`Không bật được thông báo đẩy: ${err.message}`, true);
+    }
+    await refresh();
+  });
+  disableBtn.addEventListener("click", async () => {
+    try {
+      const sub = await registration.pushManager.getSubscription();
+      if (sub) {
+        await apiJson("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      toast("Đã tắt thông báo đẩy trên thiết bị này.");
+    } catch (err) {
+      toast(`Không tắt được: ${err.message}`, true);
+    }
+    await refresh();
+  });
+  testBtn.addEventListener("click", async () => {
+    try {
+      const data = await apiJson("/api/push/test", "POST", {});
+      toast(data.sent ? "Đã gửi thông báo thử — kiểm tra khay thông báo của máy."
+                       : "Chưa gửi được thông báo thử nào.", !data.sent);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  await refresh();
 }
 
 async function renderNotifications() {
@@ -1070,12 +1160,22 @@ async function renderNotifications() {
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>🔔 Thông báo</h2><p>${data.unread} thông báo chưa đọc.</p></div>
       <button class="btn" id="markAll">Đánh dấu tất cả đã đọc</button></div>
+    <section class="card" style="margin-bottom:1rem">
+      <div class="row-item"><h3>📲 Thông báo đẩy</h3></div>
+      <p class="muted" id="pushState">Đang kiểm tra trạng thái…</p>
+      <div>
+        <button class="btn btn-primary" id="pushEnable" hidden>Bật thông báo đẩy</button>
+        <button class="btn" id="pushTest" hidden>Gửi thử</button>
+        <button class="btn btn-danger" id="pushDisable" hidden>Tắt thông báo đẩy</button>
+      </div>
+    </section>
     <div class="list">${data.items.map(notificationRow).join("") || `<div class="empty">Chưa có thông báo nào.</div>`}</div>`;
   $("#markAll").addEventListener("click", async () => {
     await apiJson("/api/notifications/read", "POST", { all: true });
     renderNotifications();
   });
   bindNotificationRows();
+  initPushPanel().catch(() => {});
 }
 
 /* =============================== boot =============================== */

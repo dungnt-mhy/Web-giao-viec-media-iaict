@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản SRS | **1.1** (tổng hợp GĐ2 — TD-0006) |
+| Phiên bản SRS | **1.2** (tổng hợp GĐ3 — TD-0008) |
 | Ngày hiệu lực | 24/10/2026 |
 | Trạng thái | Đã chốt theo bản thiết kế được duyệt ngày 24/10/2026 |
 | Sản phẩm | Web App Giao Việc (PWA) — hệ thống giao việc, duyệt và đăng bài truyền thông đa kênh của IAICT |
@@ -209,13 +209,13 @@ Quy tắc bổ sung:
 | FR-STAT-01 | Thống kê theo kỳ: Hôm nay / Tuần này / Tháng này / Tất cả; đếm việc và đầu ra theo trạng thái, theo kênh (gồm video), theo người tạo | ✅ API GĐ1 (dùng lại `stats.py` của bot) + giao diện GĐ2 |
 | FR-STAT-02 | Biểu đồ trực quan; xuất CSV (BOM UTF-8) và xuất Excel | ✅ bot + Web App GĐ2 |
 | FR-STAT-03 | Chỉ người duyệt trở lên xem được thống kê | ✅ |
-| FR-STAT-04 | Tin tổng kết ngày gửi Admin (hiện qua Telegram 20:00 giờ VN; khi chuyển hẳn sang Web App sẽ thay bằng thông báo trong Web App) | ✅ bot; 📋 GĐ3 |
+| FR-STAT-04 | Tin tổng kết ngày gửi Admin lúc 20:00 giờ VN: qua Telegram của bot và — từ GĐ3 — qua **Web Push cho Admin đã đăng ký + mục tổng kết trong hộp thông báo của Web App cho mọi người** (mỗi ngày một lần, chống gửi trùng bằng ngày đã gửi lưu trong DB); thẻ "Tổng kết hôm nay" trên màn Tổng quan và endpoint `/api/stats/daily-summary` cho số liệu trong ngày | ✅ bot; ✅ Web App GĐ3 |
 
-### 3.8 Thông báo 🔶 (hộp thông báo trong app ✅ GĐ2; Web Push 📋 GĐ3)
+### 3.8 Thông báo ✅ (hộp thông báo trong app ✅ GĐ2; Web Push ✅ GĐ3)
 
-| Mã | Yêu cầu |
-|---|---|
-| FR-NOTI-01 | Thông báo đẩy (Web Push) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị trả lại/yêu cầu sửa, đã đăng thành công kèm link, đến lịch đăng |
+| Mã | Yêu cầu | Trạng thái |
+|---|---|---|
+| FR-NOTI-01 | Thông báo đẩy (Web Push chuẩn VAPID/RFC 8291) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị duyệt/trả lại, có lệnh đăng, thu hồi, đặt lịch, tổng kết ngày 20:00. Người dùng tự bật/tắt trên từng thiết bị ở màn Thông báo; đăng ký bị dịch vụ đẩy trả 404/410 được tự xóa | ✅ GĐ3 |
 | FR-NOTI-02 | Trong giai đoạn song song, bot Telegram vẫn gửi thông báo như hiện tại (kênh dự phòng) |
 | FR-NOTI-03 | Badge số thông báo chưa đọc trên biểu tượng chuông; mở thông báo đi thẳng tới việc/thẻ kênh liên quan |
 
@@ -250,7 +250,7 @@ Quy tắc bổ sung:
 | NFR-PERF-01 | Quy mô đội nội bộ nhỏ; API danh sách có phân trang; thao tác thường dùng phản hồi dưới 1 giây trên máy chủ hiện tại |
 | NFR-USE-01 | Giao diện tiếng Việt có dấu; dùng được bằng một tay trên điện thoại; chuẩn hiển thị mỗi dòng 1 icon trên các thẻ |
 | NFR-MNT-01 | Không thêm thư viện ngoài khi stdlib đáp ứng được; mọi thay đổi ghi vào `NHAT-KY-PHAT-TRIEN.md` và `THAY-DOI.md`; cuối mỗi giai đoạn hoàn thiện lại tài liệu thiết kế/SRS cho khớp |
-| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215) |
+| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215; GĐ3: webapp 51/51, bot 215/215) |
 
 ---
 
@@ -263,6 +263,12 @@ Quy tắc bổ sung:
   - `users` thêm `email`, `phone`, `password_hash` (nullable) + unique index
     từng phần cho email/phone.
   - Thêm bảng `web_sessions` (băm token, người dùng, thời gian tạo, hạn dùng).
+  - GĐ2: `web_meta` (khóa/giá trị nội bộ của Web App), `web_notification_reads`
+    (đánh dấu đã đọc của hộp thông báo).
+  - GĐ3: `web_push_subscriptions` (đăng ký Web Push theo endpoint, UNIQUE
+    toàn cục), `web_notification_items` (mục hộp thông báo tường minh như
+    tổng kết ngày). Khóa VAPID của máy chủ lưu ngoài DB tại
+    `telegram-bot-giao-viec/data/vapid.json` (chmod 600, không vào repo).
 - Việc gắn đăng nhập web cho tài khoản Telegram sẵn có không tạo dòng trùng.
 - Trạng thái áp dụng: đã áp lên `bot.db` thật ngày 24/10/2026 sau khi sao lưu
   (`data/backup-webapp-20261024-011905/`), dữ liệu cũ nguyên vẹn
@@ -292,6 +298,9 @@ Quy tắc bổ sung:
 | `GET /api/notifications` · `POST /api/notifications/read` | Đã đăng nhập | Hộp thông báo + đánh dấu đã đọc | ✅ GĐ2 |
 | `POST /api/auth/change-password` | Đã đăng nhập | Đổi mật khẩu (hủy các phiên khác) | ✅ GĐ2 |
 | `PATCH /api/users/<id>/role` · `POST /api/users/<id>/revoke` | Theo `can_grant`/`can_revoke` | Đổi vai trò / thu hồi quyền, ghi audit | ✅ GĐ2 |
+| `GET /api/push/vapid-public-key` | Đã đăng nhập | Public key VAPID (base64url) để trình duyệt đăng ký Web Push | ✅ GĐ3 |
+| `POST /api/push/subscribe` · `POST /api/push/unsubscribe` · `POST /api/push/test` | Đã cấp quyền | Đăng ký/hủy đăng ký thiết bị nhận push (upsert theo endpoint; hủy chỉ xóa của chính mình); gửi push thử cho chính người gọi | ✅ GĐ3 |
+| `GET /api/stats/daily-summary` | Đã cấp quyền | Số liệu hôm nay (giờ VN): việc tạo mới, đầu ra theo trạng thái, đã đăng hôm nay, đang chờ duyệt/chờ đăng | ✅ GĐ3 |
 
 Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md`).
 
@@ -303,7 +312,7 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 |---|---|---|
 | GĐ1 | API + đăng nhập riêng + di trú dữ liệu | ✅ Xong 24/10/2026 (19/19 test webapp, 215/215 test bot) |
 | GĐ2 | Giao diện các luồng chính: đăng nhập, tổng quan, giao việc 3 bước, danh sách/chi tiết việc + thẻ kênh, chờ duyệt, lịch đăng, thống kê; cài dịch vụ chạy nền (cổng 8790) và tạo tài khoản Admin đầu tiên | ✅ Xong 24/10/2026 (37/37 test webapp, 215/215 test bot; commit c9ec262) |
-| GĐ3 | Thông báo đẩy Web Push + tổng kết ngày trong Web App (quản lý người dùng trên giao diện đã xong ở GĐ2) | 📋 |
+| GĐ3 | Thông báo đẩy Web Push + tổng kết ngày trong Web App (quản lý người dùng trên giao diện đã xong ở GĐ2) | ✅ Xong 24/10/2026 (51/51 test webapp, 215/215 test bot; version app 0.3.0; TD-0008) |
 | GĐ4 | Tên miền + HTTPS → chạy song song với bot → đội chuyển hẳn sang Web App → tắt dần bot (dịch vụ chạy nền đã cài từ GĐ2) | 📋 |
 | Ngoài lộ trình | Đóng gói native (Capacitor) khi thật sự cần | 📋 |
 
@@ -315,3 +324,4 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 |---|---|---|
 | 1.0 | 24/10/2026 | Bản gốc: tổng hợp từ bản thiết kế Web App đã được duyệt (24/10/2026), toàn bộ quy tắc nghiệp vụ đã chốt của hệ thống bot (GĐ1–GĐ2 bot) và GĐ1 Web App đã xây. Từ bản sau, thay đổi đi qua `THAY-DOI.md` rồi tổng hợp vào đây |
 | 1.1 | 24/10/2026 | Tổng hợp TD-0006 (GĐ2): giao diện PWA 9 màn hình, upload tư liệu 200MB/tệp, API thao tác thẻ kênh khớp bot, hàng chờ duyệt/lịch đăng, xuất thống kê, hộp thông báo trong app, đổi mật khẩu, quản lý vai trò trên giao diện; cài dịch vụ chạy nền và tạo tài khoản Admin đầu tiên. Việc còn lại: Web Push (GĐ3), tên miền/HTTPS (GĐ4) |
+| 1.2 | 24/10/2026 | Tổng hợp TD-0008 (GĐ3): Web Push chuẩn VAPID/RFC 8291 (EC qua openssl CLI, AES-128-GCM thuần Python đã kiểm chứng vector; khóa VAPID ngoài repo), API đăng ký/hủy/gửi thử push, hook thông báo tại tạo việc và các thao tác thẻ kênh, tổng kết ngày trong app (endpoint + thẻ Tổng quan + push/inbox 20:00 giờ VN chống gửi trùng). Kiểm thử: webapp 51/51, bot 215/215; app 0.3.0. Việc còn lại: chuyển đội + tắt dần bot (GĐ4; tên miền/HTTPS đã xong trước — TD-0007) |

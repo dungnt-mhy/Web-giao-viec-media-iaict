@@ -103,6 +103,50 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0007 — Mở Web App ra Internet qua Cloudflare Tunnel (làm trước phần "tên miền/HTTPS" của GĐ4)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (chọn tên miền + cấp quyền Cloudflare).
+- Nội dung: Web App truy cập được từ Internet tại **https://post.iaict-platform.com**
+  qua Cloudflare Tunnel `webapp-giao-viec` (ingress → http://127.0.0.1:8790,
+  DNS CNAME proxied). Vì netstack của máy chủ ảo chặn DNS-SRV/UDP/7844 trực
+  tiếp, hệ thống kèm 2 dịch vụ phụ trợ riêng của máy này: `cf-dns-stub`
+  (DNS tĩnh cho edge discovery + forward gateway) và `cf-edge-relay`
+  (CONNECT qua proxy egress tới edge thật, ép giao thức HTTP/2). Cả ba
+  chạy bằng systemd cùng `webapp-giao-viec`. Kiểm chứng từ ngoài: trang
+  đăng nhập + `/api/health` trả 200.
+- Ảnh hưởng: SRS mục 7 (GĐ4: phần tên miền/HTTPS ✅ xong; còn chuyển đội
+  sang Web App + tắt dần bot).
+- Trạng thái SRS: ⏳ Chờ tổng hợp khi đóng GĐ4.
+
+### TD-0008 — GĐ3: Thông báo đẩy Web Push (VAPID) + tổng kết ngày trong Web App
+- Ngày: 24/10/2026
+- Nguồn: Người dùng yêu cầu ("giữ và làm GĐ3") theo lộ trình đã chốt trong SRS mục 7
+- Nội dung thay đổi: Trước đây Web App chỉ có hộp thông báo trong app (GĐ2),
+  tổng kết ngày chỉ có qua Telegram của bot. Nay bổ sung:
+  (1) **Web Push thật theo chuẩn VAPID/RFC 8291**: khóa VAPID sinh một lần,
+  lưu ngoài repo (`data/vapid.json`, chmod 600); API lấy public key,
+  đăng ký/hủy đăng ký thiết bị, gửi thử; máy chủ tự gửi push khi có việc
+  mới, thẻ chờ duyệt, duyệt/trả lại, lệnh đăng, thu hồi, đặt lịch; đăng ký
+  nào bị dịch vụ đẩy trả 404/410 thì tự xóa. Mật mã: EC (sinh khóa, ECDH,
+  ký JWT-ES256) qua **openssl CLI** vì máy chủ không có sẵn package
+  `cryptography`; AES-128-GCM của RFC 8291 tự cài đặt thuần Python
+  (openssl `enc` không hỗ trợ AEAD) và kiểm chứng bằng test vector NIST +
+  giải mã vòng tròn. (2) **Tổng kết ngày trong app**: endpoint
+  `/api/stats/daily-summary` (việc tạo hôm nay, đầu ra theo trạng thái,
+  đã đăng hôm nay, đang chờ duyệt/chờ đăng), thẻ "Tổng kết hôm nay" trên
+  màn Tổng quan; thread nền 20:00 giờ VN mỗi ngày gửi push tổng kết cho
+  Admin + thêm mục tổng kết vào hộp thông báo của mọi người, chống gửi
+  trùng bằng ngày đã gửi lưu trong DB (web_meta). Version app 0.2.0 → 0.3.0.
+- Ảnh hưởng: SRS mục 3.7 (FR-STAT-04), 3.8 (FR-NOTI-01), 5 (bảng
+  `web_push_subscriptions`, `web_notification_items`), 6 (API push +
+  daily-summary), 7 (GĐ3 ✅); kiểm thử mở rộng ở cả hai bộ.
+- Trạng thái SRS: ✅ Đã vào SRS 1.2 (tổng hợp ngày 24/10/2026 khi đóng
+  GĐ3; kiểm thử webapp 51/51, bot 215/215; version app 0.3.0 đã chạy
+  tại https://post.iaict-platform.com)
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
+- **TD-0007** — ⏳ Chờ tổng hợp vào SRS khi đóng GĐ4 (phần tên miền/HTTPS đã xong 24/10/2026).
+- **TD-0008** — ✅ Đã tổng hợp vào **SRS 1.2** ngày 24/10/2026 (đóng GĐ3).

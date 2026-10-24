@@ -178,3 +178,102 @@ tài liệu và đẩy GitHub — trong một đợt.
   trình THAY-DOI.md).
 - **GĐ3**: Web Push thật + hoàn thiện quản lý người dùng/tổng kết.
 - **GĐ4**: tên miền + HTTPS, chạy song song rồi tắt dần bot.
+
+## 2026-10-24 — Giai đoạn 3: Web Push (VAPID) + tổng kết ngày trong app ✅
+
+Người dùng chốt "giữ việc lái thử CV-0013 và làm GĐ3". Ghi TD-0008
+vào THAY-DOI.md trước khi code, đóng giai đoạn bằng SRS 1.2.
+
+### Đã làm
+
+- **Module `webapp/push.py`** — Web Push đúng chuẩn VAPID (RFC 8292)
+  + mã hóa payload RFC 8291 (aes128gcm). Lựa chọn mật mã theo điều
+  kiện máy này: package `cryptography` **không có sẵn** và dự án giữ
+  stdlib-only, nên mọi thao tác đường cong P-256 (sinh khóa, ECDH,
+  ký/kiểm ECDSA-SHA256 cho JWT) chạy qua **openssl CLI** bằng
+  subprocess; riêng **AES-128-GCM tự cài đặt thuần Python** (AES +
+  GHASH theo NIST SP 800-38D) vì `openssl enc` không hỗ trợ cipher
+  AEAD. Đã kiểm chứng: vector FIPS-197 cho lõi AES, các vector GCM
+  đối chiếu chéo với OpenSSL (qua Node) trên 8 ca ngẫu nhiên + ca có
+  AAD, phát hiện sửa đổi qua tag, ECDH hai chiều khớp nhau, giải mã
+  vòng tròn RFC 8291 đầu-cuối. HKDF/HMAC/SHA-256 là stdlib.
+- **Khóa VAPID**: sinh một lần, lưu `data/vapid.json` cạnh bot.db
+  (chmod 600, ngoài repo — thư mục `data/` đã bị .gitignore loại;
+  đường dẫn ghi đè được bằng `WEBAPP_VAPID_PATH`). Endpoint
+  `GET /api/push/vapid-public-key` (đã đăng nhập) trả public key
+  base64url.
+- **Migration cộng thêm** (đã kiểm chứng trên bản sao trước khi áp):
+  bảng `web_push_subscriptions` (endpoint UNIQUE toàn cục, upsert
+  theo endpoint) và `web_notification_items` (mục hộp thông báo
+  tường minh, hợp nhất vào hộp thư suy diễn của GĐ2). Sao lưu DB
+  thật trước khi restart áp migration:
+  `telegram-bot-giao-viec/data/backup-gd3-20261024-040622/bot.db`
+  (integrity ok; sau áp: 1 user / 13 việc / 23 đầu ra nguyên vẹn).
+- **API push**: `POST /api/push/subscribe` (kiểm tra định dạng
+  endpoint — chỉ https, http chỉ cho loopback phục vụ test/dev — và
+  khóa p256dh/auth; gán cho người đang đăng nhập),
+  `POST /api/push/unsubscribe` (chỉ xóa đăng ký của chính mình),
+  `POST /api/push/test` (gửi thử cho chính người gọi, trả trạng thái
+  từng endpoint; endpoint nào bị trả 404/410 thì tự xóa đăng ký).
+  Gửi đi qua `urllib` tôn trọng proxy egress của service (endpoint
+  loopback bỏ qua proxy).
+- **Hook thông báo** (thread nền, bọc try/except, không chặn/chặn
+  lỗi request chính): tạo việc mới → người duyệt + Admin (trừ người
+  tạo); submit → người duyệt; approve/reject → người tạo; publish
+  (ghi `publish_requested`) → người duyệt + Admin; retract →
+  người tạo (thu hồi trực tiếp) hoặc người duyệt (yêu cầu thu hồi
+  Facebook); schedule → người tạo. Link sâu dạng `/?task=CV-xxxx`,
+  frontend mở thẳng chi tiết việc.
+- **Tổng kết ngày**: `GET /api/stats/daily-summary` (mọi vai trò đã
+  cấp quyền đều xem được — thẻ nằm ở màn Tổng quan cho mọi người;
+  gồm việc tạo hôm nay theo giờ VN, đầu ra theo trạng thái, đã đăng
+  hôm nay, đang chờ duyệt/chờ đăng hiện tại — tái dùng
+  `stats.collect_stats(store, "today")` + `count_outputs_by_status`,
+  đúng ngữ nghĩa bản tổng kết của bot). Frontend thêm thẻ "🌆 Tổng
+  kết hôm nay" ở Tổng quan. **Thread nền** kiểm tra mỗi 60 giây: từ
+  20:00 giờ VN, mỗi ngày một lần — push cho các Admin đã đăng ký +
+  chèn một mục vào hộp thông báo của mọi người; chống trùng bằng
+  khóa `web_daily_summary_date` trong `web_meta` (bot dùng khóa
+  riêng trong bot_meta cho bản Telegram, hai kênh không giẫm nhau).
+- **Frontend**: màn Thông báo thêm khối "📲 Thông báo đẩy"
+  (bật/tắt/gửi thử bằng PushManager, xử lý trạng thái bị từ chối
+  quyền); service worker thêm sự kiện `push` (showNotification kèm
+  icon + data.url) và `notificationclick` (focus cửa sổ đang mở/mở
+  mới đúng URL), cache vỏ app tăng lên v3. Version app 0.3.0.
+
+### Kiểm chứng
+
+- Test webapp: **51/51 đạt** (37 cũ + 14 mới: vector mật mã +
+  roundtrip RFC 8291 + JWT ký/kiểm; CRUD đăng ký + phân quyền +
+  upsert + quyền sở hữu khi hủy; gửi tới endpoint giả lập — kiểm
+  cả header Authorization VAPID, giải mã ngược payload, tự xóa khi
+  410; daily-summary khớp Store và đúng số tuyệt đối trên DB mới;
+  guard 20:00 gửi đúng một lần/ngày, có push + mục inbox, hôm sau
+  gửi lại). Test bot: **215/215**, không hồi quy.
+- Triển khai: `systemctl restart webapp-giao-viec` — service
+  `active`, local `/api/health` = 0.3.0, bản công khai
+  https://post.iaict-platform.com/api/health = 200 bản 0.3.0,
+  `/sw.js` bản mới có handler push, endpoint push chưa đăng nhập →
+  401; bot vẫn `active`. (Ngay sau restart có vài phút public trả
+  502/1033 vì đường hầm mất kết nối edge trong một cửa sổ proxy
+  chập chờn — cloudflared tự nối lại, không liên quan thay đổi GĐ3.)
+
+### Điểm tự chốt (chờ người dùng duyệt lại)
+
+1. Daily-summary cho **mọi vai trò đã cấp quyền** xem (khác
+   /api/stats/summary chỉ người duyệt) vì thẻ tổng kết nằm ở màn
+   Tổng quan của mọi người; số liệu là tổng hợp, không lộ chi tiết.
+2. Endpoint push chỉ chấp nhận https; http chỉ cho loopback
+   (test/dev). Hủy đăng ký chỉ xóa được đăng ký của chính mình,
+   nhưng hàng đợi gửi sẽ tự xóa bất kỳ endpoint nào bị 404/410.
+3. Không push cho thao tác `revise` (người tạo tự bấm Sửa lại) và
+   các bước trung gian publish-abort/schedule-abort/unschedule —
+   chỉ các sự kiện chính theo đặc tả GĐ3.
+4. Vị trí file khóa VAPID suy từ thư mục chứa bot.db (production
+   đúng là `telegram-bot-giao-viec/data/vapid.json`), ghi đè bằng
+   biến môi trường khi cần.
+
+### Còn lại
+
+- **GĐ4**: chuyển đội sang Web App + tắt dần bot (tên miền/HTTPS đã
+  xong trước ở TD-0007).
