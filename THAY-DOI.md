@@ -269,6 +269,33 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0012 — Sửa thanh điều hướng mobile sau phản hồi: nút + to hơn, bớt nhô cao; mục đang chọn không còn nền tối che chữ (bản 0.4.1)
+- Ngày: 24/10/2026 — Người yêu cầu: chủ dự án (phản hồi qua ảnh chụp
+  sau khi 0.4.0 lên sóng; đồng thời yêu cầu TẠM DỪNG việc build Mini
+  App Telegram để sửa nav trước — Mini App chưa có số TD, sẽ đánh số
+  khi tiếp tục).
+- Nội dung thay đổi (CHỈ giao diện/bố cục, KHÔNG đổi API, schema,
+  audit/state semantics, phân quyền, logic nghiệp vụ):
+  (1) Nút +: từ 54px (48px ở màn ≤340px) lên 58px (52px ở màn ≤340px);
+  độ nhô khỏi mép thanh giảm từ ~19px xuống ~7px (translateY -32px
+  → -20px) để nút không "nhảy vọt" lên cao mà vẫn nổi nhẹ; giữ nguyên
+  gradient Mẫu 1, viền trắng 3px, vòng mỏng ngoài, không đổ bóng,
+  nhãn "Giao việc" teal đậm.
+  (2) Sửa lỗi mục đang chọn bị nền tối che chữ: quy tắc chung
+  `.nav-btn.active{background:var(--teal)}` của sidebar rò rỉ sang nút
+  thanh dưới, kết hợp chữ teal đậm → chữ chìm trên nền tối khi bấm
+  sang mục khác. Nay nút thanh dưới khi active có nền trong suốt,
+  chỉ viên thuốc sau icon giữ nền teal nhạt (chế độ sáng) với chữ
+  tương phản đúng từng chế độ.
+  (3) Bản app 0.4.0 → 0.4.1 (VERSION, APP_VERSION, ?v=0.4.1, SW cache
+  v7, dòng phiên bản trong app) để vượt cache cạnh và nhận bản sửa
+  ngay.
+- Ảnh hưởng: chỉ thẩm mỹ/bố cục. Kiểm thử: webapp 53/53 (cập nhật
+  test version + assertion CSS mới), bot 215/215.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

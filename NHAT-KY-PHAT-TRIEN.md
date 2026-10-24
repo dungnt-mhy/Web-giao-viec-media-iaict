@@ -482,3 +482,23 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   public đều 0.4.0, trang đăng nhập public 200.
 - Tài liệu: gộp TD-0007 (phần tên miền/HTTPS), TD-0009, TD-0010,
   TD-0011 vào SRS 1.3 (GĐ4 còn lại: chuyển đội + tắt dần bot).
+
+## TD-0012 — Sửa nav mobile sau phản hồi (bản 0.4.1, 24/10/2026)
+- Người dùng phản hồi qua ảnh chụp sau 0.4.0, đồng thời yêu cầu TẠM
+  DỪNG build Mini App Telegram để sửa trước: (1) nút + "nhảy vọt
+  lên, nhỏ quá"; (2) "nhấn vào button khác thì background tối quá
+  không nhìn thấy chữ".
+- Nguyên nhân: (1) nút + đang translateY(-32px) → nhô ~19px khỏi mép
+  thanh; (2) quy tắc chung `.nav-btn.active{background:var(--teal)}`
+  của sidebar rò rỉ sang nút thanh dưới, gặp chữ teal đậm → chữ chìm
+  trên nền tối (đúng ảnh chụp: viên thuốc mục Tổng quan nền tối,
+  nhãn chìm).
+- Sửa (chỉ CSS + version): nút + 54px→58px (48px→52px ở màn ≤340px),
+  translateY -32px→-20px (nhô ~7px); nút thanh dưới khi active nền
+  trong suốt, chỉ viên thuốc sau icon giữ nền teal nhạt; bản
+  0.4.0→0.4.1 (VERSION, APP_VERSION, ?v=0.4.1, SW cache v7) để vượt
+  cache cạnh.
+- Kiểm thử: webapp 53/53, bot 215/215; health local + public đều
+  0.4.1; CSS public ?v=0.4.1 chứa đúng quy tắc mới; đủ 5 service
+  active. Mini App vẫn TẠM DỪNG, chưa đánh số TD, tiếp tục khi người
+  dùng nói tiếp.

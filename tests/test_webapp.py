@@ -591,21 +591,22 @@ class WebAppTestCase(unittest.TestCase):
         self.assertTrue(raw.startswith(b"\x89PNG"))
 
     def test_ui40_version_and_new_nav_markup(self):
-        # TD-0011: version 0.4.0 nhất quán + dấu vết tĩnh của nav
-        # mới, wizard footer mới, collapse, dark mode.
+        # TD-0011: nav mới, wizard footer mới, collapse, dark mode.
+        # TD-0012: bản 0.4.1 — version nhất quán + sửa nav (nút + to
+        # hơn, bớt nhô; mục đang chọn nền trong suốt, không che chữ).
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.4.0")
+        self.assertEqual(data["version"], "0.4.1")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.4.0", html)
+        self.assertIn("?v=0.4.1", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.4.0", js)
+        self.assertIn("0.4.1", js)
         self.assertIn("fab-circle", js)
         self.assertIn("data-review-badge", js)
         self.assertIn("day-group", js)
@@ -621,9 +622,17 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", css)
         self.assertIn("fab-circle", css)
         self.assertIn("more-sheet", css)
+        # TD-0012: nút + 58px (52px ở màn ≤340px), nhô ~7px; mục
+        # đang chọn ở thanh dưới nền trong suốt (không rò nền tối
+        # của sidebar làm chìm chữ).
+        self.assertIn("width:58px;height:58px", css)
+        self.assertIn("transform:translateY(-20px)", css)
+        self.assertIn("width:52px;height:52px", css)
+        self.assertIn(".bottom-nav .nav-btn.active{color:var(--teal-dark);"
+                      "font-weight:800;background:transparent}", css)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v6", raw)
-        self.assertIn(b"app.js?v=0.4.0", raw)
+        self.assertIn(b"giao-viec-iaict-v7", raw)
+        self.assertIn(b"app.js?v=0.4.1", raw)
 
     # ------------------------------------------------ GĐ2: uploads/files
     def test_upload_create_task_files_download_and_range(self):

@@ -7,4 +7,4 @@ unchanged. GĐ3 adds Web Push notifications (``webapp/push.py``) and
 the in-app daily summary.
 """
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
