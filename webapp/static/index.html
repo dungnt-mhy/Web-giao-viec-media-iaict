@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web App Giao Việc — Trang kiểm chứng GĐ1</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 26rem; margin: 3rem auto; padding: 0 1rem; }
+  label { display: block; margin: .8rem 0 .2rem; font-weight: 600; }
+  input { width: 100%; padding: .55rem; font-size: 1rem; box-sizing: border-box; }
+  button { margin-top: 1rem; padding: .55rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  .note { background: #fff7e0; border: 1px solid #e3c766; padding: .6rem .8rem; border-radius: .4rem; }
+  #msg { margin-top: 1rem; white-space: pre-wrap; }
+  #me { display: none; }
+</style>
+</head>
+<body>
+<h1>📋 Web App Giao Việc</h1>
+<p class="note">⚠️ <strong>Trang kiểm chứng tạm của Giai đoạn 1</strong> — chỉ để
+kiểm tra luồng đăng nhập API. Giao diện chính thức sẽ được xây ở Giai đoạn 2.</p>
+
+<form id="login-form">
+  <label for="login">Email hoặc số điện thoại</label>
+  <input id="login" name="login" autocomplete="username" required>
+  <label for="password">Mật khẩu</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+  <button type="submit">Đăng nhập</button>
+</form>
+
+<div id="me">
+  <h2>Đã đăng nhập</h2>
+  <p id="me-info"></p>
+  <button id="logout" type="button">Đăng xuất</button>
+</div>
+
+<p id="msg"></p>
+
+<script>
+const msg = document.getElementById('msg');
+const meBox = document.getElementById('me');
+const form = document.getElementById('login-form');
+
+async function showMe() {
+  const res = await fetch('/api/auth/me');
+  if (!res.ok) { meBox.style.display = 'none'; return; }
+  const data = await res.json();
+  const u = data.user;
+  document.getElementById('me-info').textContent =
+    `👤 ${u.display_name} · ${u.role_title} · ${u.email || u.phone || ''}`;
+  meBox.style.display = 'block';
+  form.style.display = 'none';
+}
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  msg.textContent = 'Đang đăng nhập…';
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      login: document.getElementById('login').value,
+      password: document.getElementById('password').value,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) { msg.textContent = '❌ ' + (data.error || 'Đăng nhập thất bại'); return; }
+  msg.textContent = '✅ Đăng nhập thành công.';
+  showMe();
+});
+
+document.getElementById('logout').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', {method: 'POST'});
+  location.reload();
+});
+
+showMe();
+</script>
+</body>
+</html>

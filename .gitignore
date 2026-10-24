@@ -1,0 +1,40 @@
+# --- Dữ liệu chạy / cơ sở dữ liệu ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# --- Thư mục sao lưu ---
+backup-*/
+backups/
+
+# --- Bí mật / môi trường ---
+.env
+.env.*
+*.env
+*secret*
+*credential*
+*.pem
+*.key
+*.token
+
+# --- Phiên / file tạm ---
+*.session
+sessions/
+*.tmp
+*.log
+*.pid
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# --- Hệ điều hành / trình soạn thảo ---
+.DS_Store
+.idea/
+.vscode/
+*~
