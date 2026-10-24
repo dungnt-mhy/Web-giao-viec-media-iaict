@@ -1645,14 +1645,12 @@ class Handler(BaseHTTPRequestHandler):
             user["telegram_id"], "🔔 Thông báo thử",
             "Web App Giao Việc gửi thông báo đẩy thử — bạn đã bật "
             "thông báo thành công.", "/")
+        # TD-0018: chỉ trả đếm sent/total (không trả endpoint —
+        # endpoint là định danh nhạy cảm của thiết bị người dùng).
         self._send_json(HTTPStatus.OK, {
             "ok": True,
             "sent": sum(1 for r in results if r["ok"]),
-            "results": [{
-                "endpoint": r["endpoint"], "ok": r["ok"],
-                "status": r["status"], "gone": r["gone"],
-                "error": r["error"],
-            } for r in results],
+            "total": len(results),
         })
 
     # -------------------------------------------------------------- stats

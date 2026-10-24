@@ -600,19 +600,21 @@ class WebAppTestCase(unittest.TestCase):
         # nút thu gọn danh sách, ngắt link dài trong thông báo.
         # TD-0015: bản 0.5.2 — version nhất quán + khóa nơi đang chờ,
         # badge PWA, icon xem thêm, chú thích tải muộn.
+        # TD-0018: bản 0.5.5 — version nhất quán + modal không cache
+        # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.4")
+        self.assertEqual(data["version"], "0.5.5")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.4", html)
+        self.assertIn("?v=0.5.5", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.4", js)
+        self.assertIn("0.5.5", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -667,10 +669,24 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("list-scroll", css)
         self.assertIn(".notification .row-main{overflow-wrap:anywhere}", css)
         self.assertIn(".notification .muted{overflow-wrap:anywhere}", css)
+        # TD-0018: modal không cache lỗi/rỗng, đồng bộ sống, Brave.
+        self.assertIn("Không tải được danh sách nơi đăng", js)
+        self.assertIn("data-retry", js)
+        self.assertIn("visibilitychange", js)
+        self.assertIn("setInterval", js)
+        self.assertIn("30000", js)
+        self.assertIn("gv-push", js)
+        self.assertIn("refreshRouteData", js)
+        self.assertIn("startLiveSync", js)
+        self.assertIn("lối tắt", js)
+        self.assertIn("Brave", js)
+        self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v12", raw)
-        self.assertIn(b"app.js?v=0.5.4", raw)
+        self.assertIn(b"giao-viec-iaict-v13", raw)
+        self.assertIn(b"app.js?v=0.5.5", raw)
         self.assertIn(b"setAppBadge", raw)
+        self.assertIn(b"gv-push", raw)
+        self.assertIn(b"postMessage", raw)
 
     def test_modal_close_button_present(self):
         # TD-0016: mọi modal đều có nút X góc phải trên, chỉ đóng lại
@@ -1414,6 +1430,10 @@ class WebAppTestCase(unittest.TestCase):
                                        token=writer)
             self.assertEqual(status, 200, data)
             self.assertEqual(data["sent"], 1)
+            # TD-0018: trả đếm sent/total, không lộ endpoint.
+            self.assertEqual(data["total"], 1)
+            self.assertNotIn("results", data)
+            self.assertNotIn("endpoint", json.dumps(data))
             self.assertEqual(len(fake.requests), 1)
             captured = fake.requests[0]
 
@@ -1457,9 +1477,10 @@ class WebAppTestCase(unittest.TestCase):
                                        token=writer)
             self.assertEqual(status, 200, data)
             self.assertEqual(data["sent"], 0)
-            self.assertEqual(len(data["results"]), 1)
-            self.assertEqual(data["results"][0]["status"], 410)
-            self.assertTrue(data["results"][0]["gone"])
+            # TD-0018: chỉ trả đếm sent/total, không lộ endpoint.
+            self.assertEqual(data["total"], 1)
+            self.assertNotIn("results", data)
+            self.assertNotIn("endpoint", json.dumps(data))
             # 410 => the subscription is dropped automatically.
             self.assertEqual(self.webdb.push_subscriptions_for_user(
                 self.user_ids["writer"]), [])
@@ -1718,9 +1739,21 @@ class DailySummaryFreshTests(unittest.TestCase):
                 push_mod.b64url_encode(recv_point),
                 push_mod.b64url_encode(auth), "test-agent")
 
-            day1_morning = datetime(2026, 10, 24, 19, 59, tzinfo=ICT)
-            day1_evening = datetime(2026, 10, 24, 20, 5, tzinfo=ICT)
-            day1_later = datetime(2026, 10, 24, 21, 30, tzinfo=ICT)
+            # TD-0018: derive the fixture day from the seeded tasks
+            # instead of hardcoding 24/10 — create_task stamps "now"
+            # (UTC), so after 17:00 UTC the fixtures fall on the next
+            # ICT day and a hardcoded date only passed 07:00-24:00 ICT
+            # (a time-of-day flake, unrelated to any TD-0018 code).
+            seeded = self.store.list_tasks(limit=1)[0]
+            fixture_day = datetime.fromisoformat(
+                seeded["created_at"]).astimezone(ICT).date()
+            day_label = fixture_day.strftime("%d/%m/%Y")
+            day1_morning = datetime(fixture_day.year, fixture_day.month,
+                                    fixture_day.day, 19, 59, tzinfo=ICT)
+            day1_evening = datetime(fixture_day.year, fixture_day.month,
+                                    fixture_day.day, 20, 5, tzinfo=ICT)
+            day1_later = datetime(fixture_day.year, fixture_day.month,
+                                  fixture_day.day, 21, 30, tzinfo=ICT)
             day2_evening = day1_evening + timedelta(days=1)
 
             self.assertFalse(maybe_send_daily_summary(
@@ -1731,7 +1764,7 @@ class DailySummaryFreshTests(unittest.TestCase):
             self.assertFalse(maybe_send_daily_summary(
                 self.app, now=day1_later))
             self.assertEqual(self.webdb.get_meta(
-                "web_daily_summary_date"), "2026-10-24")
+                "web_daily_summary_date"), fixture_day.isoformat())
 
             # Exactly one push went to the Admin's endpoint, and it
             # decrypts to the summary text.
@@ -1739,7 +1772,7 @@ class DailySummaryFreshTests(unittest.TestCase):
             plain = push_mod.decrypt_payload(
                 fake.requests[0]["body"], recv_pem, recv_point, auth)
             payload = json.loads(plain.decode("utf-8"))
-            self.assertIn("Tổng kết ngày 24/10/2026", payload["title"])
+            self.assertIn(f"Tổng kết ngày {day_label}", payload["title"])
             self.assertIn("Việc tạo hôm nay: 2", payload["body"])
 
             # Exactly one inbox item exists for everyone.
@@ -1754,7 +1787,7 @@ class DailySummaryFreshTests(unittest.TestCase):
             dailies = [i for i in data["items"]
                        if i["kind"] == "daily_summary"]
             self.assertEqual(len(dailies), 1)
-            self.assertIn("Tổng kết ngày 24/10/2026", dailies[0]["title"])
+            self.assertIn(f"Tổng kết ngày {day_label}", dailies[0]["title"])
 
             # The next day it fires again (second push, second item).
             self.assertTrue(maybe_send_daily_summary(

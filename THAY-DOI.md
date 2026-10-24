@@ -522,6 +522,51 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0018 — Modal nơi đăng không trống oan, đồng bộ sống, badge/push app Brave đã ghim (bản 0.5.5)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án (test CV-0016 lúc
+  00:27-00:33, 3 lỗi).
+- (A) Modal "Chọn nơi đăng Facebook" trống hoàn toàn với CV-0016
+  (output facebook id 26 DRAFT, chưa có target): nguyên nhân
+  fbTargets() cache luôn [] khi gọi /api/facebook-targets lỗi —
+  modal sau đó không bao giờ thử lại. Sửa: chỉ cache khi tải thành
+  công và danh sách không rỗng; lỗi/rỗng trả null (không cache) và
+  modal hiện trạng thái lỗi + nút "Thử lại". Dòng "Tất cả nơi đăng
+  đều đã xong..." chỉ hiện khi tải được targets và không còn nơi
+  nào chọn được. Áp cả modal Đăng và Đặt lịch; nơi đã đăng/đang
+  chờ vẫn hiện hàng disabled có nhãn.
+- (B) Đồng bộ sống: trước đây không có setInterval, visibilitychange
+  hay postMessage SW → client, app đang mở không tự cập nhật. Sửa:
+  poll 30 giây (chỉ khi tab hiển thị, có chặn gọi chồng) tải lại
+  thông báo + badge; quay lại app (visibilitychange) tải lại ngay
+  dữ liệu màn hiện tại + thông báo + badge; SW khi nhận push
+  postMessage "gv-push" cho client đang mở để tải lại. Poll chỉ
+  gọi thông báo + badge (không tải lại danh sách để khỏi mất vị
+  trí cuộn).
+- (C) Badge/push app Brave đã ghim: đã xác minh bằng MDN + web.dev
+  (không đoán): Badging API KHÔNG hỗ trợ trên trình duyệt Chromium
+  ở Android — setAppBadge ở đó là no-op, Android chỉ tự hiện chấm
+  thông báo khi còn thông báo chưa đọc; Brave không có máy chủ
+  mint WebAPK nên "ghim" chỉ tạo lối tắt (icon có logo Brave,
+  đúng ảnh người dùng gửi), không có icon trong Launcher/Cài đặt,
+  không dùng được khả năng chỉ dành cho app cài đặt. Vì vậy badge
+  số trên icon là không làm được ở Brave Android — thông báo đẩy
+  là đường duy nhất để có chấm thông báo; subscription là theo
+  từng trình duyệt (Brave cần bật riêng). Sửa: màn Thông báo thêm
+  chú thích ngắn nói rõ 2 điểm này + gợi ý cài bằng Chrome để có
+  app thật (WebAPK); nút "Gửi thử" trả về đếm sent/total (bỏ
+  trường results lộ endpoint), giao diện hiện "Đã gửi tới N/T
+  thiết bị". Badge trong app vẫn cập nhật ở mọi lần số chưa đọc
+  đổi (tải trang, poll, quay lại app, nhận push, đánh dấu đã đọc)
+  qua updateBadges; SW push-time giữ nguyên.
+- Ảnh hưởng: chỉ webapp (bot không đổi). Bản 0.5.4 → 0.5.5 (VERSION,
+  APP_VERSION, ?v=0.5.5, SW cache v13). Kiểm thử: webapp + bot phải
+  xanh; test mới: fbTargets không cache lỗi/rỗng, modal lỗi + thử
+  lại, poll/visibility refresh, SW postMessage, /api/push/test trả
+  sent/total không lộ endpoint.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

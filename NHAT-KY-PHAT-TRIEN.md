@@ -671,3 +671,44 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   đúng Admin (không in endpoint); vapid.json mode 600.
 - Public: health local + public 0.5.4, login 200, SW cache v12, đủ 5
   service active, bot long polling.
+
+## TD-0018 — Modal nơi đăng không trống oan, đồng bộ sống, badge/push app Brave đã ghim (bản 0.5.5, 25/10/2026)
+- Người dùng test CV-0016 lúc 00:27-00:33 ngày 25/10, báo 3 lỗi.
+- (A) fbTargets() chỉ cache khi tải thành công và danh sách không
+  rỗng; lỗi/rỗng trả null (không cache) — lỗi cũ cache [] làm
+  modal trống oan. Modal Đăng và Đặt lịch khi không tải được nơi
+  đăng hiện lỗi + nút "🔄 Thử lại"; dòng "không còn nơi nào để
+  chọn" chỉ hiện khi tải được targets mà không còn nơi chọn được.
+- (B) Đồng bộ sống: poll 30 giây (chỉ khi tab hiển thị, refreshBadge
+  có chặn gọi chồng) tải thông báo + badge; visibilitychange → tải
+  lại ngay dữ liệu màn hiện tại + thông báo + badge; SW khi nhận
+  push postMessage "gv-push" cho client đang mở (client tải lại
+  badge + dữ liệu Danh sách/Chi tiết việc). Poll không tải lại
+  danh sách để khỏi mất vị trí cuộn.
+- (C) Badge/push Brave: xác minh bằng MDN + web.dev — Badging API
+  không hỗ trợ trên Chromium ở Android (setAppBadge là no-op),
+  Android chỉ tự hiện chấm thông báo khi còn thông báo chưa đọc;
+  Brave không mint WebAPK nên ghim chỉ tạo lối tắt (icon có logo
+  Brave, không có trong Launcher/Cài đặt, không dùng khả năng chỉ
+  dành cho app cài đặt). Màn Thông báo thêm chú thích ngắn nói rõ
+  2 điểm này + gợi ý cài bằng Chrome để có app thật. Nút "Gửi thử"
+  nay trả đếm sent/total (bỏ trường results lộ endpoint), giao
+  diện hiện "Đã gửi tới N/T thiết bị". Badge trong app vẫn cập nhật
+  qua updateBadges ở mọi lần số chưa đọc đổi; SW push-time giữ
+  nguyên.
+- Sửa kèm: test tổng kết ngày bị flake theo giờ (fixture create_task
+  đóng dấu "now" UTC, test chốt ngày 24/10 ICT nên chỉ xanh
+  07:00-24:00 giờ VN) — test nay suy ngày fixture từ created_at
+  của task đã gieo, không đổi code sản phẩm.
+- Kiểm thử: webapp 58/58, bot 251/251; probe Playwright trên bản
+  sao DB đạt 15/15 (modal lỗi → thử lại hiện đủ 2 nơi đã chọn sẵn,
+  visibilitychange và poll 30s đều tải lại thông báo, chú thích
+  Brave + phiên bản 0.5.5 hiển thị; DB thật sha không đổi).
+  Giới hạn probe: headless Chromium ép Notification.permission =
+  denied nên không bấm được nút Bật/Gửi thử trong probe — nút có
+  trong DOM, đường /api/push/test đã có test đơn vị (sent/total,
+  không lộ endpoint), đăng ký push thật đã có bằng chứng sống từ
+  subscription của Admin.
+- Máy chủ lại bị thay giữa đợt (mất unit webapp + tunnel, public
+  1033) — đã khôi phục bằng restore-services.sh, đủ 5 service
+  active, public 0.5.5.

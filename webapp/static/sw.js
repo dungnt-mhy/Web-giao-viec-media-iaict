@@ -7,12 +7,12 @@
    Other static assets (icons, manifest) stay cache-first.
    skipWaiting + clients.claim make a new worker take over at once;
    app.js reloads the page once when control changes hands. */
-const CACHE = "giao-viec-iaict-v12";
+const CACHE = "giao-viec-iaict-v13";
 /* index.html references the shell assets with a ?v=<release> query:
    Cloudflare's edge once kept serving a stale /app.js under its
    plain URL (default TTL) even after the origin had the new file. */
 const SHELL = [
-  "/", "/index.html", "/app.js?v=0.5.4", "/styles.css?v=0.5.4",
+  "/", "/index.html", "/app.js?v=0.5.5", "/styles.css?v=0.5.5",
   "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png",
 ];
 const SHELL_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css"]);
@@ -72,6 +72,12 @@ self.addEventListener("push", (event) => {
       badge: "/icon-192.png",
       data: { url: data.url || "/" },
     })
+  );
+  // TD-0018: báo cho tab đang mở tải lại ngay (đừng chờ poll 30s).
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => clients.forEach((c) => c.postMessage({ type: "gv-push" })))
+      .catch(() => {})
   );
   // TD-0015: best-effort home-screen badge while the app is closed.
   // The push payload carries no unread count, so fetch it (same

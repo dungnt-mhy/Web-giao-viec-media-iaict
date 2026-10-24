@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.4";
+const APP_VERSION = "0.5.5";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -255,19 +255,58 @@ function updateBadges(unread, reviewCount = null) {
   });
 }
 
+let refreshBadgePromise = null;
 async function refreshBadge() {
-  try {
-    const data = await api("/api/notifications");
-    let reviewCount = null;
-    if (state.me?.can_review) {
-      try {
-        const queue = await api("/api/review-queue");
-        reviewCount = queue.items.length;
-      } catch { /* badge chờ duyệt chỉ là hiển thị thêm */ }
-    }
-    updateBadges(data.unread, reviewCount);
-    return data;
-  } catch { return null; }
+  // TD-0018: một lần tải đang chạy thì không chồng thêm (poll +
+  // visibility + push cùng lúc chỉ còn một lần gọi).
+  if (refreshBadgePromise) return refreshBadgePromise;
+  refreshBadgePromise = (async () => {
+    try {
+      const data = await api("/api/notifications");
+      let reviewCount = null;
+      if (state.me?.can_review) {
+        try {
+          const queue = await api("/api/review-queue");
+          reviewCount = queue.items.length;
+        } catch { /* badge chờ duyệt chỉ là hiển thị thêm */ }
+      }
+      updateBadges(data.unread, reviewCount);
+      return data;
+    } catch { return null; }
+  })();
+  try { return await refreshBadgePromise; }
+  finally { refreshBadgePromise = null; }
+}
+
+/* TD-0018: đồng bộ sống — app đang mở tự cập nhật, không cần
+   refresh tay. Poll 30 giây chỉ tải thông báo + badge (không tải
+   lại danh sách để khỏi mất vị trí cuộn); quay lại app hoặc nhận
+   push thì tải lại cả dữ liệu màn hiện tại. */
+let lastLiveRefresh = 0;
+function refreshRouteData(routes = null) {
+  const modalOpen = document.querySelector("#modalRoot")?.innerHTML.trim();
+  const liveRoutes = routes || ["dashboard", "tasks", "detail", "review", "schedule", "stats", "users", "notifications"];
+  if (modalOpen || !liveRoutes.includes(state.route)) return;
+  navigate(state.route, state.taskCode);
+}
+function refreshOnReturn() {
+  if (document.hidden) return;
+  const now = Date.now();
+  if (now - lastLiveRefresh < 5000) return; // chống gọi dồn
+  lastLiveRefresh = now;
+  refreshBadge();
+  refreshRouteData();
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshOnReturn();
+});
+let livePollStarted = false;
+function startLiveSync() {
+  if (livePollStarted) return;
+  livePollStarted = true;
+  setInterval(() => {
+    if (!document.hidden) refreshBadge();
+  }, 30000);
 }
 
 function navigate(route, taskCode = null) {
@@ -311,6 +350,7 @@ function showApp() {
       $("#sideCollapseBtn").title = "Mở rộng sidebar";
     }
   } catch {}
+  startLiveSync(); // TD-0018: poll thông báo + badge khi đã đăng nhập
   // Push notifications deep-link with ?task=CV-xxxx: open that task.
   const taskParam = new URLSearchParams(location.search).get("task");
   if (taskParam) navigate("detail", taskParam);
@@ -812,14 +852,18 @@ function outputActions(output, task) {
 
 let fbTargetsCache = null;
 async function fbTargets() {
+  // TD-0018: chỉ cache khi tải thành công và danh sách không rỗng.
+  // Lỗi hoặc rỗng thì trả null (không cache) để lần mở modal sau
+  // thử lại — cache [] như trước làm modal trống oan (CV-0016).
   if (fbTargetsCache) return fbTargetsCache;
   try {
     const data = await api("/api/facebook-targets");
-    fbTargetsCache = data.targets || [];
-  } catch {
-    fbTargetsCache = [];
-  }
-  return fbTargetsCache;
+    if (data.targets && data.targets.length) {
+      fbTargetsCache = data.targets;
+      return fbTargetsCache;
+    }
+  } catch { /* fall through: null, no caching */ }
+  return null;
 }
 
 function fbPlaceShort(output, key) {
@@ -1042,6 +1086,20 @@ async function publishFlow(id, reload, alreadyPending = false) {
     toast(`✅ ${data.message}`); await reload(); return;
   }
   const targets = await fbTargets();
+  if (!targets) {
+    // TD-0018: không tải được nơi đăng thì hiện lỗi + nút thử lại,
+    // tuyệt đối không hiện dòng "không còn nơi nào để chọn".
+    openModal(`
+    <h3>📘 Chọn nơi đăng Facebook</h3>
+    <p class="muted">❌ Không tải được danh sách nơi đăng — kiểm tra mạng rồi bấm thử lại.</p>
+    <div class="modal-actions">
+      <button class="btn" data-close>Đóng</button>
+      <button class="btn btn-primary" data-retry>🔄 Thử lại</button>
+    </div>`);
+    $("[data-close]").addEventListener("click", closeModal);
+    $("[data-retry]").addEventListener("click", () => { closeModal(); publishFlow(id, reload, alreadyPending); });
+    return;
+  }
   const done = new Set(Object.keys(output?.fb_state?.urls || {}));
   const { locked, pending } = fbLockedPlaces(output);
   const available = targets.filter((t) => !locked.has(t.key));
@@ -1088,6 +1146,19 @@ async function scheduleFlow(id, reload, alreadyPending = false) {
   const output = detail?.outputs.find((o) => o.id === id);
   const isFacebook = output?.channel === "facebook";
   const schedTargets = isFacebook ? await fbTargets() : [];
+  if (isFacebook && !schedTargets) {
+    // TD-0018: như modal Đăng — lỗi tải thì hiện lỗi + thử lại.
+    openModal(`
+    <h3>🕐 Đặt lịch đăng</h3>
+    <p class="muted">❌ Không tải được danh sách nơi đăng Facebook — kiểm tra mạng rồi bấm thử lại.</p>
+    <div class="modal-actions">
+      <button class="btn" data-close>Đóng</button>
+      <button class="btn btn-primary" data-retry>🔄 Thử lại</button>
+    </div>`);
+    $("[data-close]").addEventListener("click", closeModal);
+    $("[data-retry]").addEventListener("click", () => { closeModal(); scheduleFlow(id, reload, alreadyPending); });
+    return;
+  }
   const schedDone = new Set(Object.keys(output?.fb_state?.urls || {}));
   const schedLock = isFacebook ? fbLockedPlaces(output) : { locked: new Set(), pending: new Set() };
   const schedChecks = isFacebook ? `
@@ -1492,9 +1563,16 @@ async function initPushPanel() {
   });
   testBtn.addEventListener("click", async () => {
     try {
+      // TD-0018: hiện đếm sent/total để tự kiểm chứng thiết bị
+      // đang dùng có nhận push không.
       const data = await apiJson("/api/push/test", "POST", {});
-      toast(data.sent ? "Đã gửi thông báo thử — kiểm tra khay thông báo của máy."
-                       : "Chưa gửi được thông báo thử nào.", !data.sent);
+      if (!data.total) {
+        toast("Chưa có thiết bị nào đăng ký nhận push — hãy bấm “Bật thông báo đẩy” trên thiết bị này trước.", true);
+      } else if (data.sent) {
+        toast(`Đã gửi thông báo thử tới ${data.sent}/${data.total} thiết bị — kiểm tra khay thông báo của máy.`);
+      } else {
+        toast("Chưa gửi được thông báo thử nào.", true);
+      }
     } catch (err) {
       toast(err.message, true);
     }
@@ -1537,6 +1615,7 @@ async function renderNotifications() {
         <button class="btn" id="pushTest" hidden>Gửi thử</button>
         <button class="btn btn-danger" id="pushDisable" hidden>Tắt thông báo đẩy</button>
       </div>
+      <p class="muted small">Thông báo đẩy và badge là theo từng trình duyệt / app đã ghim — cần bật riêng một lần ở mỗi nơi. App ghim bằng Brave là lối tắt (icon có logo Brave), không phải app cài đặt: trên Android, badge số không hiện được, chỉ có chấm thông báo khi còn thông báo chưa đọc. Muốn nhận push khi đóng app, hãy bật thông báo trong Brave; muốn có app thật thì cài bằng Chrome.</p>
     </section>
     ${groupHtml || `<div class="empty">Chưa có thông báo nào.</div>`}`;
   $("#markAll").addEventListener("click", async () => {
@@ -1563,6 +1642,13 @@ if ("serviceWorker" in navigator) {
     if (!hadController || reloading) return;
     reloading = true;
     location.reload();
+  });
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    // TD-0018: SW báo khi có push mới — tải lại ngay, không chờ poll.
+    if (event.data && event.data.type === "gv-push") {
+      refreshBadge();
+      refreshRouteData(["tasks", "detail"]);
+    }
   });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js")
