@@ -533,6 +533,44 @@ class WebAppTestCase(unittest.TestCase):
         self.assertEqual(data["total"], 0)
         self.assertEqual(data["counts"]["DRAFT"], 0)
 
+    def test_approved_waiting_badge_source_counts(self):
+        # TD-0019: nguồn đếm cho huy hiệu mục "Đã duyệt · chờ đăng" —
+        # counts.APPROVED_WAITING của GET /api/tasks?limit=1, đúng số
+        # chip lọc hiện trên màn Việc; items vẫn giới hạn theo limit.
+        admin = self.login("admin")
+        marker = "TD0019DUYETCHODANG"
+        for _ in range(2):
+            task, _output = self.make_output(
+                status="APPROVED_WAITING", hint=f"{marker} AW")
+            self.store.sync_task_status_from_outputs(task["code"])
+        task, _output = self.make_output(
+            status="PUBLISHED", hint=f"{marker} PUB")
+        self.store.sync_task_status_from_outputs(task["code"])
+        status, data, _ = self.req(
+            "GET", f"/api/tasks?q={quote(marker)}&limit=1", token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["counts"]["APPROVED_WAITING"], 2)
+        self.assertEqual(data["counts"]["PUBLISHED"], 1)
+        # Lọc theo trạng thái chỉ trả đúng 2 việc chờ đăng.
+        status, data, _ = self.req(
+            "GET", f"/api/tasks?q={quote(marker)}&status=APPROVED_WAITING",
+            token=admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], 2)
+
+    def test_approved_waiting_menu_permission_flags(self):
+        # TD-0019: mục mới chỉ hiện với người có quyền duyệt — cờ
+        # can_review mà frontend dùng để vẽ menu Thêm/sidebar.
+        admin = self.login("admin")
+        status, me, _ = self.req("GET", "/api/auth/me", token=admin)
+        self.assertEqual(status, 200)
+        self.assertTrue(me["user"]["can_review"])
+        writer = self.login("writer")
+        status, me, _ = self.req("GET", "/api/auth/me", token=writer)
+        self.assertEqual(status, 200)
+        self.assertFalse(me["user"]["can_review"])
+
     def test_task_detail_and_404(self):
         admin = self.login("admin")
         status, data, _ = self.req("GET", f"/api/tasks/{self.known_code}",
@@ -604,17 +642,17 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.5")
+        self.assertEqual(data["version"], "0.5.6")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.5", html)
+        self.assertIn("?v=0.5.6", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.5", js)
+        self.assertIn("0.5.6", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -682,11 +720,22 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v13", raw)
-        self.assertIn(b"app.js?v=0.5.5", raw)
+        self.assertIn(b"giao-viec-iaict-v14", raw)
+        self.assertIn(b"app.js?v=0.5.6", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
+        # TD-0019: mục "Đã duyệt · chờ đăng" (bản 0.5.6) — lối tắt
+        # tới màn Việc lọc sẵn APPROVED_WAITING, chỉ cho người duyệt,
+        # có huy hiệu đếm việc chờ đăng.
+        self.assertIn("Đã duyệt · chờ đăng", js)
+        self.assertIn("isApprovedWaitingView", js)
+        self.assertIn("data-approved-badge", js)
+        self.assertIn('data-status="${item.status}"', js)
+        self.assertIn("approvedCount", js)
+        self.assertIn("counts.APPROVED_WAITING", js)
+        self.assertIn('status: "APPROVED_WAITING"', js)
+        self.assertIn("syncTaskStatusFromHash", js)
 
     def test_modal_close_button_present(self):
         # TD-0016: mọi modal đều có nút X góc phải trên, chỉ đóng lại

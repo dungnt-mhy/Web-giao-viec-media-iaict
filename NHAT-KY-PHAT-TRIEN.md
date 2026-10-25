@@ -746,3 +746,26 @@ hợp (TD-0009 để trạng thái chờ, theo chỉ đạo đợt này).
   này — để cho đợt gộp tài liệu bot riêng nếu cần.
 - Kiểm thử sau gộp (chỉ sửa tài liệu, không đụng code): webapp 58/58;
   app giữ 0.5.5, không restart service.
+
+## TD-0019 — Mục "Đã duyệt · chờ đăng" trong menu Thêm (bản 0.5.6, 25/10/2026)
+- Người dùng yêu cầu thêm trạng thái Duyệt - chờ đăng vào nút Thêm.
+- Làm (chỉ giao diện): menu Thêm (•••) có thêm mục "✅ Đã duyệt ·
+  chờ đăng" cho người có quyền duyệt, đứng đầu sheet; bấm mở màn
+  Việc với bộ lọc APPROVED_WAITING đặt sẵn qua deep-link
+  #tasks?status=APPROVED_WAITING (tái dùng chip lọc sẵn có, không
+  màn mới). Mục này cũng hiện trực tiếp ở sidebar desktop, ngay sau
+  "Chờ duyệt". Nút Thêm active khi đang ở mục mới; nút Việc chỉ
+  active khi không ở mục mới. Huy hiệu đếm việc chờ đăng lấy từ
+  counts.APPROVED_WAITING của GET /api/tasks?limit=1 — đúng số chip
+  lọc hiện trên màn Việc — cập nhật cùng refreshBadge (chỉ người
+  duyệt, lỗi thì giữ số cũ). Sửa kèm một lỗi lộ ra khi probe: nav
+  vẽ trước khi renderTasks đồng bộ taskStatus từ hash nên trạng thái
+  active sai lúc vừa điều hướng — nay navigate() đồng bộ từ hash
+  trước khi vẽ nav (helper syncTaskStatusFromHash dùng chung).
+- Kiểm thử: webapp 60/60 (58 cũ + 2 mới: nguồn đếm badge, cờ phân
+  quyền can_review), bot 251/251; probe Playwright trên bản sao DB
+  thật 21/21 (desktop sidebar + badge, mobile sheet + badge, lọc
+  đúng 4 việc chờ đăng CV-0008/0009/0013/0016, active đúng cả hai
+  chiều, writer không thấy mục); DB thật sha256 không đổi sau probe;
+  health local + public 0.5.6, login public 200, đủ 5 service active,
+  asset public ?v=0.5.6 chứa dấu vết mới, SW cache v14.

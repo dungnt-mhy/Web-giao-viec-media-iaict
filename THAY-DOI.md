@@ -567,6 +567,27 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0019 — Thêm mục "Đã duyệt · chờ đăng" vào menu Thêm (bản 0.5.6)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án ("Ở nút Thêm, cho
+  thêm trạng thái Duyệt - chờ đăng").
+- Nội dung thay đổi (CHỈ giao diện): menu Thêm (nút •••) có thêm
+  mục "✅ Đã duyệt · chờ đăng" cho người có quyền duyệt, mở màn Việc
+  với bộ lọc trạng thái đặt sẵn APPROVED_WAITING (tái dùng chip lọc
+  sẵn có + deep-link #tasks?status=APPROVED_WAITING, không tạo màn
+  mới). Mục này cũng hiện trực tiếp ở sidebar desktop (cùng hành vi).
+  Nút Thêm hiện active khi đang ở mục mới; nút Việc chỉ active khi
+  không ở mục mới. Huy hiệu số lượng: đếm việc ở trạng thái
+  APPROVED_WAITING lấy từ `counts` của GET /api/tasks?limit=1 — đúng
+  số chip lọc hiện trên màn Việc — cập nhật cùng cơ chế refreshBadge
+  (chỉ với người có quyền duyệt, lỗi thì giữ nguyên số cũ).
+- Ảnh hưởng: chỉ webapp (bot không đổi). Bản 0.5.5 → 0.5.6 (VERSION,
+  APP_VERSION, ?v=0.5.6, SW cache v14). Kiểm thử: webapp + bot phải
+  xanh; test mới: mục chỉ hiện với người duyệt, bấm mở đúng màn Việc
+  lọc APPROVED_WAITING, nút Thêm active ở mục mới, badge đếm đúng.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

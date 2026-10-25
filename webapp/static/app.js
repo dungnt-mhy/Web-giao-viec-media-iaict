@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.5";
+const APP_VERSION = "0.5.6";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -140,6 +140,8 @@ function navItems() {
   if (me.can_review) {
     items.push(
       { route: "review", icon: "⏳", label: "Chờ duyệt" },
+      // TD-0019: lối tắt tới màn Việc lọc sẵn APPROVED_WAITING.
+      { route: "tasks", status: "APPROVED_WAITING", icon: "✅", label: "Đã duyệt · chờ đăng", approvedBadge: true },
       { route: "schedule", icon: "🕐", label: "Lịch đăng" },
       { route: "stats", icon: "📊", label: "Thống kê" },
     );
@@ -151,13 +153,27 @@ function navItems() {
   return items;
 }
 
+/* TD-0019: màn Việc lọc APPROVED_WAITING là một mục nav riêng
+   ("Đã duyệt · chờ đăng") — nút Việc chỉ active khi không ở mục này. */
+function isApprovedWaitingView() {
+  return state.route === "tasks" && state.taskStatus === "APPROVED_WAITING";
+}
+function navItemActive(item) {
+  if (item.status) return state.route === item.route && state.taskStatus === item.status;
+  if (item.route === "tasks") {
+    return (state.route === "tasks" || state.route === "detail") && !isApprovedWaitingView();
+  }
+  return state.route === item.route;
+}
+
 function renderNav(unread = null) {
   const items = navItems();
   const html = items.map((item) => `
-    <button class="nav-btn ${state.route === item.route || (item.route === "tasks" && state.route === "detail") ? "active" : ""}"
-      data-nav="${item.route}">
+    <button class="nav-btn ${navItemActive(item) ? "active" : ""}"
+      data-nav="${item.route}"${item.status ? ` data-status="${item.status}"` : ""}>
       <span>${item.icon}</span><span>${item.label}</span>
       ${item.badge ? `<span class="badge" data-unread-badge ${unread ? "" : "hidden"}>${unread || ""}</span>` : ""}
+      ${item.approvedBadge ? `<span class="badge" data-approved-badge hidden></span>` : ""}
     </button>`).join("");
   $("#sideNav").innerHTML = html;
   $("#mobileNav").innerHTML = html;
@@ -167,6 +183,9 @@ function renderNav(unread = null) {
   const extras = [];
   if (state.me.can_review) {
     extras.push(
+      // TD-0019: "Đã duyệt · chờ đăng" đứng đầu menu Thêm — mở màn
+      // Việc với bộ lọc trạng thái đặt sẵn APPROVED_WAITING.
+      { route: "tasks", status: "APPROVED_WAITING", icon: "✅", label: "Đã duyệt · chờ đăng", approvedBadge: true },
       { route: "schedule", icon: "🕐", label: "Lịch đăng" },
       { route: "stats", icon: "📊", label: "Thống kê" },
     );
@@ -192,24 +211,34 @@ function renderNav(unread = null) {
       </button>`;
     }
     if (item.more) {
-      const active = ["schedule", "stats", "users"].includes(state.route) ? "active" : "";
+      // TD-0019: nút Thêm active cả khi đang ở mục "Đã duyệt · chờ đăng".
+      const active = ["schedule", "stats", "users"].includes(state.route) || isApprovedWaitingView() ? "active" : "";
       return `<button class="nav-btn ${active}" data-more aria-label="Thêm">
         <span>${item.icon}</span><span class="nav-label">${item.label}</span>
       </button>`;
     }
-    const active = state.route === item.route || (item.route === "tasks" && state.route === "detail") ? "active" : "";
-    return `<button class="nav-btn ${active}" data-nav="${item.route}" aria-label="${item.label}">
+    const active = navItemActive(item) ? "active" : "";
+    return `<button class="nav-btn ${active}" data-nav="${item.route}"${item.status ? ` data-status="${item.status}"` : ""} aria-label="${item.label}">
       <span>${item.icon}</span><span class="nav-label">${item.label}</span>
       ${item.badge ? `<span class="badge" data-unread-badge ${unread ? "" : "hidden"}>${unread || ""}</span>` : ""}
       ${item.reviewBadge ? `<span class="badge" data-review-badge hidden></span>` : ""}
     </button>`;
   }).join("");
   $("#moreSheet").innerHTML = extras.map((item) => `
-    <button class="nav-btn ${state.route === item.route ? "active" : ""}" data-nav="${item.route}" role="menuitem">
+    <button class="nav-btn ${navItemActive(item) ? "active" : ""}" data-nav="${item.route}"${item.status ? ` data-status="${item.status}"` : ""} role="menuitem">
       <span>${item.icon}</span><span>${item.label}</span>
+      ${item.approvedBadge ? `<span class="badge" data-approved-badge hidden></span>` : ""}
     </button>`).join("");
   $$("[data-nav]").forEach((btn) =>
-    btn.addEventListener("click", () => { closeMore(); navigate(btn.dataset.nav); }));
+    btn.addEventListener("click", () => {
+      closeMore();
+      // TD-0019: mục trạng thái đặt trước bộ lọc màn Việc qua hash
+      // (renderTasks đọc #tasks?status=…), không cần route mới.
+      if (btn.dataset.status) {
+        history.replaceState(null, "", `#tasks?status=${btn.dataset.status}`);
+      }
+      navigate(btn.dataset.nav);
+    }));
   const moreBtn = $("[data-more]");
   if (moreBtn) moreBtn.addEventListener("click", () => {
     const sheet = $("#moreSheet");
@@ -231,7 +260,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeMore();
 });
 
-function updateBadges(unread, reviewCount = null) {
+function updateBadges(unread, reviewCount = null, approvedCount = null) {
   $("#bellBadge").hidden = !unread;
   $("#bellBadge").textContent = unread || "";
   $$("[data-unread-badge]").forEach((badge) => {
@@ -253,6 +282,13 @@ function updateBadges(unread, reviewCount = null) {
     badge.hidden = !reviewCount;
     badge.textContent = reviewCount > 99 ? "99" : String(reviewCount);
   });
+  // TD-0019: số việc ở trạng thái APPROVED_WAITING trên mục
+  // "Đã duyệt · chờ đăng" (sidebar + menu Thêm).
+  $$("[data-approved-badge]").forEach((badge) => {
+    if (approvedCount === null) return;
+    badge.hidden = !approvedCount;
+    badge.textContent = approvedCount > 99 ? "99" : String(approvedCount);
+  });
 }
 
 let refreshBadgePromise = null;
@@ -264,13 +300,21 @@ async function refreshBadge() {
     try {
       const data = await api("/api/notifications");
       let reviewCount = null;
+      let approvedCount = null;
       if (state.me?.can_review) {
         try {
           const queue = await api("/api/review-queue");
           reviewCount = queue.items.length;
         } catch { /* badge chờ duyệt chỉ là hiển thị thêm */ }
+        try {
+          // TD-0019: số việc ở trạng thái APPROVED_WAITING — đúng
+          // số chip lọc hiện trên màn Việc (counts của /api/tasks).
+          const tasks = await api("/api/tasks?limit=1");
+          approvedCount = tasks.counts
+            ? (tasks.counts.APPROVED_WAITING || 0) : null;
+        } catch { /* badge chỉ là hiển thị thêm */ }
       }
-      updateBadges(data.unread, reviewCount);
+      updateBadges(data.unread, reviewCount, approvedCount);
       return data;
     } catch { return null; }
   })();
@@ -309,10 +353,23 @@ function startLiveSync() {
   }, 30000);
 }
 
+/* TD-0019: đồng bộ bộ lọc màn Việc từ hash trước khi vẽ nav, để
+   trạng thái active của các mục nav đúng ngay khi vừa điều hướng
+   (renderTasks trước đây chỉ đồng bộ sau khi nav đã vẽ xong). */
+function syncTaskStatusFromHash() {
+  const hashParams = new URLSearchParams(location.hash.split("?")[1] || "");
+  const hashStatus = hashParams.get("status");
+  if (hashStatus !== null
+      && STATUS_CHIPS.some(([code]) => code === hashStatus)) {
+    state.taskStatus = hashStatus;
+  }
+}
+
 function navigate(route, taskCode = null) {
   closeMore(); // sheet must never survive a route change (e.g. bell tap)
   state.route = route;
   state.taskCode = taskCode;
+  if (route === "tasks") syncTaskStatusFromHash();
   renderNav();
   const screen = $("#screen");
   screen.innerHTML = `<div class="loading">⏳ Đang tải…</div>`;
@@ -596,12 +653,9 @@ async function renderTasks() {
   }
   // TD-0009: the status filter survives leaving/returning to this
   // screen — kept in state, mirrored to the URL hash (#tasks?status=…).
-  const hashParams = new URLSearchParams(location.hash.split("?")[1] || "");
-  const hashStatus = hashParams.get("status");
-  if (hashStatus !== null
-      && STATUS_CHIPS.some(([code]) => code === hashStatus)) {
-    state.taskStatus = hashStatus;
-  }
+  // TD-0019: navigate() đã đồng bộ từ hash trước khi vẽ nav;
+  // gọi lại ở đây để chắc chắn khi renderTasks chạy trực tiếp.
+  syncTaskStatusFromHash();
   $("#screen").innerHTML = `
     <div class="page-head">
       <div><h2>📋 Danh sách việc</h2><p>Tìm kiếm và lọc theo trạng thái, kênh, người tạo.</p></div>
@@ -641,6 +695,9 @@ async function renderTasks() {
         state.taskStatus = btn.dataset.statusChip;
         history.replaceState(null, "", state.taskStatus
           ? `#tasks?status=${state.taskStatus}` : "#tasks");
+        // TD-0019: giữ trạng thái active của nav đúng với bộ lọc
+        // (rời mục "Đã duyệt · chờ đăng" thì nút Việc active lại).
+        renderNav();
         paintChips();
         load().catch((e) => toast(e.message, true));
       }));
