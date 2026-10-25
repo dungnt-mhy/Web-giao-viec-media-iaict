@@ -828,7 +828,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   nhỏ (ghép đủ/thiếu miếng, tiếp tục sau rớt, từ chối miếng quá lớn)
   và cho quy tắc lưu trữ/xóa; probe Playwright + kiểm chứng thật với
   file lớn (vd 300MB) qua đường công khai.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào SRS 1.6 ngày 25/10/2026
 - Kết quả (25/10, ĐÃ XONG — bản 0.5.11): (a) API tải chia nhỏ
   `POST /api/uploads/chunked/init|chunk|complete|status`, `DELETE`
   hủy phiên; miếng 50MB, ngưỡng dùng đường chia nhỏ >20MB, file nhỏ
@@ -932,7 +932,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   `/etc/default/webapp-giao-viec` nhưng KHÔNG có
   `TELEGRAM_BOT_TOKEN` (token Mini App người dùng cấp 25/10 chỉ nằm
   trong file đó + chat) — đăng nhập Mini App sẽ lỗi cho tới khi nhập
-  lại token. Token không lưu ở đâu khác; cần người dùng cấp lại. | ⏳ Chờ cập nhật
+  lại token. Token không lưu ở đâu khác; cần người dùng cấp lại. | ✅ Đã tổng hợp vào SRS 1.6 ngày 25/10/2026
 
 ---
 
@@ -1008,14 +1008,14 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   duyệt cây data/files/ mỗi lần nhận file — đủ nhanh ở quy mô
   hiện tại, sẽ chậm dần nếu có hàng nghìn file; (3) file gửi qua
   Telegram vẫn giới hạn 20MB của Bot API (không đổi).
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào SRS 1.6 ngày 25/10/2026
 
 ### TD-0026 — Nối Meta Graph API vào nút Đăng: bài Fanpage đăng thẳng qua API, không qua trình duyệt (bản 0.5.13)
 - Ngày: 25/10/2026 — Người yêu cầu: chủ dự án (nối tiếp đường Graph API đã mở ngày 25/10: app "IAICT Publisher", System User token không thời hạn đã lưu vào custom.meta-graph, đã kiểm chứng đăng nháp + xóa).
 - Nội dung thay đổi: bot tự đăng bài lên Fanpage qua Graph API khi nơi đăng là Fanpage (không mở trình duyệt, không còn thẻ Allow từng ảnh); bài đăng lên trang cá nhân giữ nguyên đường trình duyệt (API của Meta không đăng được lên trang cá nhân). Luồng đăng/đặt lịch/thu hồi qua Telegram và webapp giữ nguyên giao diện và audit; chỉ đổi "tay đăng" bên dưới đối với nơi Fanpage. Sửa ID trang Minhy dùng cho API: 1319112221296020 (ID tài sản trong Business Settings) thay cho số 61595515900524 ghi ngày 23/10 (API từ chối); `GET /api/facebook-targets` trả về ID đã sửa.
 - Ảnh hưởng: bot (module mới, worker đăng/thu hồi qua API, di trú ID trang), webapp (chỉ kiểm chứng `GET /api/facebook-targets`, không đổi giao diện). Không gộp SRS trong TD này.
 - Trạng thái: ✅ Đã xong (25/10/2026). Bot 290/290 (277 + 13 test mới TD-0026), webapp 88/88, bản 0.5.13. Probe trên bản sao DB: đăng thử chưa công khai rồi thu hồi qua API đều xác minh được, DB thật sha không đổi. Máy chủ bị thay giữa chừng đã khôi phục đủ 5 service, health 0.5.13 cả local lẫn public.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ Đã tổng hợp vào SRS 1.6 ngày 25/10/2026
 
 ---
 
@@ -1034,3 +1034,6 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - **TD-0016** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (nút X đóng modal ở góc phải trên; bản 0.5.3).
 - **TD-0017** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (botctl đăng/thu hồi gửi kèm Web Push; bản 0.5.4).
 - **TD-0018** — ✅ Đã tổng hợp vào **SRS 1.4** ngày 25/10/2026 (modal nơi đăng không trống oan, đồng bộ sống, badge/push app Brave đã ghim; bản 0.5.5).
+- **TD-0024** — ✅ Đã tổng hợp vào **SRS 1.6** ngày 25/10/2026 (tải chia nhỏ 50MB/2GB, lưu trữ Drive + xóa sau đăng, quét 48h, khôi phục từ Drive, giới hạn 9GB, mọi thời gian giờ VN; bản 0.5.11).
+- **TD-0025** — ✅ Đã tổng hợp vào **SRS 1.6** ngày 25/10/2026 (giới hạn 9GB áp dụng cả đường Telegram, đầy thì gửi thẳng lên Drive; bản 0.5.12).
+- **TD-0026** — ✅ Đã tổng hợp vào **SRS 1.6** ngày 25/10/2026 (nối Meta Graph API vào nút Đăng, sửa ID trang Minhy dùng cho API; bản 0.5.13).

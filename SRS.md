@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản SRS | **1.5** (tổng hợp TD-0019, TD-0020, TD-0021, TD-0022, TD-0023) |
+| Phiên bản SRS | **1.6** (tổng hợp TD-0024, TD-0025, TD-0026) |
 | Ngày hiệu lực | 25/10/2026 |
 | Trạng thái | Đã chốt theo bản thiết kế được duyệt ngày 24/10/2026 |
 | Sản phẩm | Web App Giao Việc (PWA) — hệ thống giao việc, duyệt và đăng bài truyền thông đa kênh của IAICT |
@@ -33,6 +33,9 @@ người dùng. Web App chạy song song với bot Telegram giao việc hiện t
 chung dữ liệu với bot; việc chuyển đội sang Web App đang tạm dừng theo quyết
 định của chủ dự án ngày 24/10/2026 (xem 2.4). Ngoài Web App PWA còn có Mini
 App Telegram là bề mặt thêm trên cùng backend và dữ liệu (TD-0020).
+Bài đăng lên Fanpage đi qua Meta Graph API (TD-0026); bài đăng lên
+trang cá nhân vẫn qua trình duyệt của Muse, vì API của Meta không
+đăng được lên trang cá nhân.
 
 ### 1.2 Phạm vi
 
@@ -113,10 +116,13 @@ Quy tắc bổ sung:
   khóa nơi đăng là `profile` (trang cá nhân Nguyễn Trọng Minh Huy, cố định
   1 mục) và `page_<fb_page_id>` (mỗi Fanpage một khóa). Danh sách nơi đăng
   lấy từ dữ liệu — trang cá nhân + bảng `facebook_pages` (hiện chỉ có
-  1 dòng: Fanpage Minhy, id 61595515900524); thêm Fanpage về sau chỉ cần
-  thêm dòng vào bảng (chưa có màn hình quản lý Fanpage). Mỗi nơi có link
-  bài đã đăng riêng; trạng thái Đã đăng chỉ khi TẤT CẢ nơi trong tập hợp
-  đều đăng xong.
+  1 dòng: Fanpage Minhy, id 1319112221296020 — sửa ở TD-0026; số
+  61595515900524 ghi ngày 23/10/2026 không dùng được cho API); thêm
+  Fanpage về sau chỉ cần thêm dòng vào bảng (chưa có màn hình quản lý
+  Fanpage). Mỗi nơi có link bài đã đăng riêng; trạng thái Đã đăng chỉ
+  khi TẤT CẢ nơi trong tập hợp đều đăng xong. Nơi Fanpage do bot tự
+  đăng qua Meta Graph API (TD-0026, xem FR-PUB-09); nơi trang cá
+  nhân do Muse đăng qua trình duyệt.
 
 ### 2.4 Mô hình chạy song song với bot Telegram 🔶
 
@@ -158,10 +164,14 @@ Quy tắc bổ sung:
 
 - Muse là tác nhân duy nhất viết nháp, dựng video và đăng bài thật (qua
   trình duyệt/connector hiện có); Web App không tự soạn nội dung.
-- Đăng Facebook qua trình duyệt của Muse (trang cá nhân và Fanpage Minhy);
-  nơi đăng (một hoặc nhiều nơi, xem 2.3) phải được chốt ngay tại thao tác
-  Đăng hoặc Đặt lịch (mục 3.4–3.5); nơi đã đăng xong không đăng lại, nơi
-  đang chờ đăng không chọn lại (mục 3.4, FR-PUB-08).
+- Đăng Facebook: nơi Fanpage do bot tự đăng qua Meta Graph API (TD-0026),
+  nơi trang cá nhân do Muse đăng qua trình duyệt; nơi đăng (một hoặc
+  nhiều nơi, xem 2.3) phải được chốt ngay tại thao tác Đăng hoặc Đặt
+  lịch (mục 3.4–3.5); nơi đã đăng xong không đăng lại, nơi đang chờ
+  đăng không chọn lại (mục 3.4, FR-PUB-08).
+- Mọi thời gian trong hệ thống dùng giờ Việt Nam (Asia/Saigon, UTC+7) —
+  hiển thị và tính toán theo giờ VN; DB lưu UTC nội bộ thì phải chuyển
+  đổi khi hiển thị (TD-0024).
 
 ---
 
@@ -185,11 +195,12 @@ Quy tắc bổ sung:
 |---|---|---|
 | FR-TASK-01 | Tạo việc theo wizard 3 bước: (1) tải tư liệu, (2) ghi/sửa gợi ý, (3) chọn kênh theo quy tắc 2.3, bấm "🚀 Chốt! Gửi Muse" là hoàn tất tạo việc | ✅ Web App GĐ2 (bot ✅) |
 | FR-TASK-02 | Mỗi việc có mã `CV-xxxx` duy nhất tăng dần liên tục giữa cả bot và Web App; hiển thị kèm **người tạo** và **thời gian tạo (giờ Việt Nam)** | ✅ lõi dùng chung |
-| FR-TASK-03 | Tải tư liệu trực tiếp lên Web App (ảnh, video, tệp) thay cho gửi qua Telegram; tư liệu gắn với việc và được Muse truy cập để làm bài; giới hạn 200MB/tệp, lưu đúng cấu trúc `data/files/<MÃ VIỆC>/` của bot, hai điểm vào: kèm lúc tạo việc và gắn thêm vào việc đã có. Gắn thêm tư liệu vào việc đã có thẻ kênh: form hiện chú thích (tư liệu mới chỉ gắn vào việc, Muse chưa được báo — nhắn Muse nếu muốn dùng) và hệ thống gửi thông báo đẩy cho người duyệt/Admin; không đổi trạng thái việc, phân quyền giữ nguyên (chỉ người tạo/Admin được gắn thêm) (TD-0015) | ✅ GĐ2; chú thích + thông báo gắn thêm ✅ TD-0015 |
+| FR-TASK-03 | Tải tư liệu trực tiếp lên Web App (ảnh, video, tệp) thay cho gửi qua Telegram; tư liệu gắn với việc và được Muse truy cập để làm bài; giới hạn **2GB/tệp qua đường tải chia nhỏ** (TD-0024): trình duyệt cắt file thành miếng ~50MB, gửi lần lượt, máy chủ ráp lại trên đĩa (không giữ cả file trong RAM), rớt mạng tiếp tục từ miếng dở dang; file nhỏ dùng đường đơn cũ; mục Thêm tư liệu có bước kiểm tra kích thước + thông báo rõ. Lưu đúng cấu trúc `data/files/<MÃ VIỆC>/` của bot, hai điểm vào: kèm lúc tạo việc và gắn thêm vào việc đã có. Gắn thêm tư liệu vào việc đã có thẻ kênh: form hiện chú thích (tư liệu mới chỉ gắn vào việc, Muse chưa được báo — nhắn Muse nếu muốn dùng) và hệ thống gửi thông báo đẩy cho người duyệt/Admin; không đổi trạng thái việc, phân quyền giữ nguyên (chỉ người tạo/Admin được gắn thêm) (TD-0015) | ✅ GĐ2; chú thích + thông báo gắn thêm ✅ TD-0015; tải chia nhỏ ✅ TD-0024 (bản 0.5.11) |
 | FR-TASK-04 | Danh sách việc có tìm kiếm và lọc theo trạng thái / kênh / người tạo, có phân trang; lọc theo trạng thái theo đúng trạng thái việc suy ra từ các thẻ kênh, API trả thêm `counts` từng trạng thái và giao diện hiện chip lọc kèm số lượng (TD-0009). Danh sách hiện theo đợt + "Xem thêm"/"Thu gọn" (xem NFR-USE-01, TD-0022) | ✅ API GĐ1 + giao diện GĐ2; lọc + counts ✅ TD-0009; pager ✅ TD-0022 |
 | FR-TASK-07 | Lối tắt "✅ Đã duyệt · chờ đăng" (TD-0019): mục đứng đầu menu Thêm (nút •••) và hiện trực tiếp ở sidebar desktop sau "Chờ duyệt", chỉ người có quyền duyệt mới thấy; bấm mở màn Việc với bộ lọc trạng thái đặt sẵn APPROVED_WAITING (tái dùng chip lọc sẵn có + deep-link `#tasks?status=APPROVED_WAITING`, không tạo màn mới); nút Thêm hiện active khi đang ở mục này, nút Việc chỉ active khi không ở mục này; huy hiệu đếm việc ở trạng thái APPROVED_WAITING lấy từ `counts` của `GET /api/tasks?limit=1` (đúng số chip lọc hiện trên màn Việc), cập nhật cùng cơ chế làm mới badge, lỗi thì giữ nguyên số cũ | ✅ TD-0019 (bản 0.5.6) |
 | FR-TASK-05 | Việc giữ nguyên gợi ý và tư liệu gốc làm hồ sơ; người tạo sửa được gợi ý của việc mình | ✅ bot + Web App GĐ2 |
 | FR-TASK-06 | Mọi vai trò đã được cấp quyền (kể cả Cộng tác viên) đều tạo việc được; tài khoản chờ cấp quyền bị chặn (403) | ✅ GĐ1 |
+| FR-TASK-08 | Vòng đời file tư liệu và giới hạn kho (TD-0024, TD-0025): (a) khi TẤT CẢ đầu ra của một việc (trừ đã hủy) đều đã đăng thành công thì toàn bộ file tư liệu của việc đó được tải lên Google Drive của chủ dự án (thư mục "Giao Việc IAICT — Bản gốc", mỗi việc một thư mục con) rồi xóa khỏi máy chủ; file của một việc dùng chung cho nhiều kênh nên chỉ xóa khi đủ mọi đầu ra; Drive lỗi thì giữ file + ghi audit, không xóa. (b) Việc nằm quá 48h ở trạng thái chờ duyệt hoặc chờ đăng thì cũng đẩy toàn bộ file lên Drive rồi xóa khỏi máy chủ (trạng thái việc giữ nguyên); không lưu trữ khi đang có lệnh đăng dở dang. (c) Khôi phục: nút "↩️ Tải lại từ Drive" ở Chi tiết việc khi file đang lưu trữ, và tự động tải lại khi bấm Đăng/Đặt lịch mà file chưa có trên máy chủ; file đã lưu trữ hiện dưới dạng link Drive thay vì ảnh vỡ. (d) Giới hạn tổng: toàn bộ file trên kho của app (kể cả thư mục tạm của tải chia nhỏ) không quá **9GB** — mọi đường tải lên (webapp + Telegram) đều chặn file mới khi tổng dung lượng sẽ vượt 9GB; khi đầy, file gửi qua Telegram được gửi thẳng lên Drive (không giữ bản local), Drive lỗi thì giữ local + báo Admin; file lưu trên máy chủ Telegram không tính, không đụng tới. (e) Màn Thống kê hiển thị mức đã dùng X/9GB. Mọi thời gian (tính 48h, thời điểm lưu trữ/khôi phục trong log/audit và hiển thị) dùng giờ Việt Nam | ✅ TD-0024 (bản 0.5.11); giới hạn 9GB cho đường Telegram ✅ TD-0025 (bản 0.5.12) |
 
 ### 3.3 Thẻ việc và thẻ kênh (mô hình "Cách A") ✅ (đã chốt và chạy ở bot; Web App kế thừa)
 
@@ -211,9 +222,10 @@ Quy tắc bổ sung:
 | FR-PUB-03 | Người tạo có nút **Sửa lại** trên thẻ kênh của việc mình (khác nút Trả lại của người duyệt) với cùng cơ chế ghi yêu cầu nguyên văn | ✅ bot |
 | FR-PUB-04 | Nút Đăng trên thẻ kênh chỉ là **lệnh đăng**: trạng thái chỉ chuyển Đã đăng **sau khi** Muse đăng thật và gắn link bài; không tự báo đã đăng khi chưa có link thật. Link bài đã đăng Facebook lưu theo từng nơi đăng (FR-PUB-05); đầu ra PUBLISHED/RETRACTED kiểu cũ chỉ có một `public_url` mà không có target ở cột thì suy nơi đăng từ audit `publish_requested` gần nhất, không suy được thì hiển thị chung "Facebook" (TD-0015) | ✅ bot |
 | FR-PUB-05 | Riêng Facebook: khi bấm Đăng phải chọn nơi đăng ngay trong cùng giao diện — chọn **một hoặc nhiều nơi** trong danh sách (trang cá nhân Nguyễn Trọng Minh Huy, Fanpage Minhy và các Fanpage thêm sau — mục 2.3), bắt buộc chọn ít nhất 1 nơi mới cho xác nhận; nơi đã đăng xong hiện "đã đăng" và không chọn lại, nơi đang chờ đăng hiện "đang chờ đăng" và không chọn lại (xem FR-PUB-08); lệnh đăng ghi kèm tập hợp nơi đã chốt; có nút hủy tại bước chọn. Modal chọn nơi không bao giờ trống oan: nếu không tải được danh sách nơi đăng thì hiện lỗi rõ ràng kèm nút thử lại, không hiện dòng "không còn nơi nào để chọn" khi chưa tải được (TD-0018). Mọi modal đều có nút X góc phải trên để đóng (chỉ đóng, không xác nhận, không hủy lệnh — xem NFR-USE-01) (TD-0016) | ✅ bot + Web App GĐ2; chọn nhiều nơi ✅ TD-0013; modal lỗi + thử lại ✅ TD-0018 |
-| FR-PUB-06 | Thu hồi bài Facebook = **xóa thật** trên Facebook ở **TẤT CẢ các nơi đã đăng thành công**, kiểm chứng từng nơi biến mất rồi mới đổi trạng thái Thu hồi và thông báo; kênh khác thu hồi trong hệ thống | ✅ bot; thu hồi từng nơi ✅ TD-0013 |
+| FR-PUB-06 | Thu hồi bài Facebook = **xóa thật** trên Facebook ở **TẤT CẢ các nơi đã đăng thành công**, kiểm chứng từng nơi biến mất rồi mới đổi trạng thái Thu hồi và thông báo; kênh khác thu hồi trong hệ thống | ✅ bot; thu hồi từng nơi ✅ TD-0013; nơi Fanpage đăng qua API thì thu hồi cũng qua API (`DELETE /{post-id}`, kiểm chứng bài biến mất) ✅ TD-0026 (bản 0.5.13) |
 | FR-PUB-07 | Việc của chính Admin tạo: bỏ qua Gửi duyệt/Duyệt (xem 2.2) | ✅ |
 | FR-PUB-08 | Khóa nơi đang chờ đăng Facebook (TD-0015): tập khóa = nơi đã đăng xong ∪ (tập lệnh đang chờ − nơi đã đăng − nơi đăng lỗi); nơi đăng lỗi vẫn chọn lại được để đăng lại. Lịch đang chờ giờ không khóa nơi đăng (sửa lịch được). Hủy lệnh đăng dọn tập lệnh đã hủy để không khóa oan. Máy chủ từ chối (409) khi toàn bộ nơi chọn đều đã khóa (kèm tên nơi bị khóa); chọn lẫn nơi khóa + nơi mở thì chỉ đăng nơi mở và báo rõ nơi bị bỏ qua | ✅ bot + Web App TD-0015 |
+| FR-PUB-09 | Đăng Fanpage qua Meta Graph API (TD-0026): khi nơi đăng là Fanpage, bot tự đăng qua API thay vì mở trình duyệt — bài chữ qua `POST /{page-id}/feed`, bài có ảnh tải từng ảnh lên `POST /{page-id}/photos` (`published=false`) rồi đăng một bài duy nhất kèm `attached_media` (tối đa 10 ảnh); token trang lấy trong tiến trình qua System User token (không in/không lưu token), đăng xong kiểm chứng đọc lại được mới hoàn tất như luồng đăng thường (audit + link bài + thông báo); đăng lỗi thì giữ lệnh chờ, báo Admin (giờ VN), không lật Đã đăng, không tự đăng lại; claim audit `fb_api_publish_attempt` chống đăng trùng một lệnh; bài trang cá nhân giữ nguyên đường trình duyệt (API của Meta không đăng được lên trang cá nhân) | ✅ TD-0026 (bản 0.5.13) |
 
 ### 3.5 Đặt lịch đăng ✅ (bot + Web App GĐ2)
 
@@ -222,7 +234,7 @@ Quy tắc bổ sung:
 | FR-SCH-01 | Thẻ kênh đang chờ đăng đặt được lịch: nhập giờ dạng `HH:MM` hoặc `DD/MM HH:MM` (giờ Việt Nam) hoặc chọn nhanh (sau 1 giờ, sau 2 giờ, tối nay 20:00, sáng mai 8:00); Facebook phải chốt nơi đăng trước khi nhập giờ; lịch đăng Facebook lưu cả tập hợp nơi đăng đã chốt (TD-0013) |
 | FR-SCH-02 | Thẻ kênh hiển thị lịch đã đặt; đổi lịch/hủy lịch được; bấm Đăng ngay thì lịch tự hủy; lịch đang chờ giờ không khóa nơi đăng (sửa lịch được — TD-0015) |
 | FR-SCH-03 | Cảnh báo (không chặn) khi bài cùng kênh đặt cách nhau chưa tới 1 giờ hoặc vừa có bài đăng trong vòng 1 giờ trước giờ chọn |
-| FR-SCH-04 | Đến giờ, hệ thống tự phát lệnh đăng kèm nơi đăng đã chốt; có màn hình quản lý tập trung mọi bài đang đặt lịch, thao tác được ngay (Đăng ngay / Đổi lịch / Hủy lịch) |
+| FR-SCH-04 | Đến giờ, hệ thống tự phát lệnh đăng kèm nơi đăng đã chốt; có màn hình quản lý tập trung mọi bài đang đặt lịch, thao tác được ngay (Đăng ngay / Đổi lịch / Hủy lịch). Lệnh đăng tới nơi Fanpage do worker API của bot thực hiện (TD-0026), nơi trang cá nhân vẫn do Muse đăng qua trình duyệt |
 
 ### 3.6 Kênh video ✅ (bot + Web App GĐ2 — xem video nháp ngay trong trang)
 
@@ -237,7 +249,7 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-STAT-01 | Thống kê theo kỳ: Hôm nay / Tuần này / Tháng này / Tất cả; đếm việc và đầu ra theo trạng thái, theo kênh (gồm video), theo người tạo | ✅ API GĐ1 (dùng lại `stats.py` của bot) + giao diện GĐ2 |
+| FR-STAT-01 | Thống kê theo kỳ: Hôm nay / Tuần này / Tháng này / Tất cả; đếm việc và đầu ra theo trạng thái, theo kênh (gồm video), theo người tạo; màn Thống kê hiện mức dùng kho file X/9GB kèm thanh tiến trình (TD-0024) | ✅ API GĐ1 (dùng lại `stats.py` của bot) + giao diện GĐ2; thanh dung lượng ✅ TD-0024 |
 | FR-STAT-02 | Biểu đồ trực quan; xuất CSV (BOM UTF-8) và xuất Excel | ✅ bot + Web App GĐ2 |
 | FR-STAT-03 | Chỉ người duyệt trở lên xem được thống kê | ✅ |
 | FR-STAT-04 | Tin tổng kết ngày gửi Admin lúc 20:00 giờ VN: qua Telegram của bot và — từ GĐ3 — qua **Web Push cho Admin đã đăng ký + mục tổng kết trong hộp thông báo của Web App cho mọi người** (mỗi ngày một lần, chống gửi trùng bằng ngày đã gửi lưu trong DB); thẻ "Tổng kết hôm nay" trên màn Tổng quan và endpoint `/api/stats/daily-summary` cho số liệu trong ngày | ✅ bot; ✅ Web App GĐ3 |
@@ -246,7 +258,7 @@ Quy tắc bổ sung:
 
 | Mã | Yêu cầu | Trạng thái |
 |---|---|---|
-| FR-NOTI-01 | Thông báo đẩy (Web Push chuẩn VAPID/RFC 8291) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị duyệt/trả lại, có lệnh đăng, thu hồi, đặt lịch, tổng kết ngày 20:00. Người dùng tự bật/tắt trên từng thiết bị ở màn Thông báo; đăng ký bị dịch vụ đẩy trả 404/410 được tự xóa; thẻ bật thông báo đẩy LUÔN hiện kèm dòng trạng thái rõ ràng (không ẩn khi lỗi sớm) và giao diện hiện dòng số phiên bản app để đối chiếu cache (TD-0009). Sự kiện đăng/thu hồi/đăng lỗi qua botctl cũng ghi hàng `web_notification_items` (key `published:`/`publish_failed:`/`retracted:` + id đầu ra + id audit, kèm link từng nơi) VÀ gửi Web Push tới mọi subscription đã đăng ký (TD-0015, TD-0017); `--no-notify` tắt cả Telegram, hàng web và push; thiếu token Telegram không chặn push web; lỗi gửi push không làm hỏng lệnh botctl. Thêm tư liệu muộn vào việc đã có thẻ kênh cũng gửi push cho người duyệt/Admin (xem FR-TASK-03) | ✅ GĐ3; thẻ luôn hiện + dòng phiên bản ✅ TD-0009; hàng web botctl ✅ TD-0015; push kèm botctl ✅ TD-0017 |
+| FR-NOTI-01 | Thông báo đẩy (Web Push chuẩn VAPID/RFC 8291) + hộp thông báo trong Web App cho các sự kiện: có việc mới, có thẻ chờ duyệt, bị duyệt/trả lại, có lệnh đăng, thu hồi, đặt lịch, tổng kết ngày 20:00. Người dùng tự bật/tắt trên từng thiết bị ở màn Thông báo; đăng ký bị dịch vụ đẩy trả 404/410 được tự xóa; thẻ bật thông báo đẩy LUÔN hiện kèm dòng trạng thái rõ ràng (không ẩn khi lỗi sớm) và giao diện hiện dòng số phiên bản app để đối chiếu cache (TD-0009). Sự kiện đăng/thu hồi/đăng lỗi qua botctl cũng ghi hàng `web_notification_items` (key `published:`/`publish_failed:`/`retracted:` + id đầu ra + id audit, kèm link từng nơi) VÀ gửi Web Push tới mọi subscription đã đăng ký (TD-0015, TD-0017); `--no-notify` tắt cả Telegram, hàng web và push; thiếu token Telegram không chặn push web; lỗi gửi push không làm hỏng lệnh botctl. Thêm tư liệu muộn vào việc đã có thẻ kênh cũng gửi push cho người duyệt/Admin (xem FR-TASK-03). Lệnh đăng/thu hồi/đăng lỗi qua API của bot (TD-0026) cũng ghi hàng web + gửi push như botctl | ✅ GĐ3; thẻ luôn hiện + dòng phiên bản ✅ TD-0009; hàng web botctl ✅ TD-0015; push kèm botctl ✅ TD-0017; sự kiện API ✅ TD-0026 |
 | FR-NOTI-02 | Trong giai đoạn song song, bot Telegram vẫn gửi thông báo như hiện tại (kênh dự phòng) |
 | FR-NOTI-03 | Badge số thông báo chưa đọc trên biểu tượng chuông; mở thông báo đi thẳng tới việc/thẻ kênh liên quan; thanh điều hướng mobile cũng có badge chưa đọc và badge số thẻ chờ duyệt (hình tròn cố định, không méo, không bị nút Giao việc che — TD-0010/TD-0011). Badge trong app đồng bộ `navigator.setAppBadge(số chưa đọc)` mỗi khi hộp thông báo tải/làm mới (kể cả khi quay lại app và theo poll đồng bộ sống — FR-NOTI-04) và xóa khi đã đọc hết; service worker cũng đồng bộ badge khi nhận push (best-effort). **Giới hạn nền tảng đã xác minh (TD-0018, theo MDN): Badging API KHÔNG hỗ trợ trên trình duyệt Chromium chạy Android — `setAppBadge` ở đó là no-op; Android chỉ tự hiện chấm thông báo khi có thông báo chưa đọc, và chấm chỉ hiện trên icon app đã cài đặt thật; ghim bằng Brave chỉ tạo lối tắt (Brave không mint WebAPK) nên không có badge — muốn chấm thì cài bằng Chrome (app thật, WebAPK) + bật push riêng trong app đó + có push thật tới. iOS cũng không hỗ trợ Badging API (TD-0015)** |
 | FR-NOTI-04 | Đồng bộ sống (TD-0018): app tự tải lại thông báo + badge mỗi 30 giây khi tab đang hiển thị (không tải lại danh sách để khỏi mất vị trí cuộn); quay lại app thì tải lại ngay dữ liệu màn hiện tại + thông báo + badge; service worker khi nhận push báo cho client đang mở (postMessage `"gv-push"`) để tải lại. Nút "Gửi thử" trong màn Thông báo báo đã gửi tới N/T thiết bị (không lộ endpoint) | ✅ TD-0018 |
@@ -282,7 +294,7 @@ Quy tắc bổ sung:
 | NFR-PERF-01 | Quy mô đội nội bộ nhỏ; API danh sách có phân trang; thao tác thường dùng phản hồi dưới 1 giây trên máy chủ hiện tại |
 | NFR-USE-01 | Giao diện tiếng Việt có dấu; dùng được bằng một tay trên điện thoại; chuẩn hiển thị mỗi dòng 1 icon trên các thẻ; làm kỹ CẢ mobile lẫn desktop. Ngôn ngữ thị giác từ bản 0.4.0 (TD-0011, theo bản thiết kế mới đã chốt): thẻ bo 20px, tầng bậc chữ rõ, tông teal chủ đạo; thanh điều hướng mobile 6 cột (Tổng quan, Việc, nút Giao việc, Chờ duyệt, Thông báo, Thêm) với nút Giao việc tròn gradient viền trắng nổi trên thanh, nhãn một dòng, badge tròn cố định; bảng menu nổi "Thêm" (chạm ngoài/Esc đóng, đổi màn tự đóng); collapse cho khối thông tin việc, thẻ kênh, bộ lọc, nhóm thông báo theo ngày; sidebar desktop thu gọn thành thanh icon; wizard 3 bước với nút chính full-width nằm trên, nút phụ thành hàng dưới; sáng/tối theo hệ thống (prefers-color-scheme). Trước đó: thanh dưới mobile dạng thanh nổi bo tròn (TD-0010, bản 0.3.2); sửa cache vỏ app network-first + SW v4→v6 để người dùng nhận giao diện mới ngay (TD-0009, bản 0.3.1). Sửa sau phản hồi (TD-0012, bản 0.4.1): nút Giao việc 58px (52px ở màn ≤340px), nhô ~7px khỏi mép thanh; nút thanh dưới khi active có nền trong suốt (sửa lỗi nền tối của sidebar rò sang làm chữ chìm). Dải chip lọc (TD-0014, bản 0.5.1): dải riêng nền teal nhạt, chữ đậm 800, chip đang chọn nền teal đậm + chữ trắng + số đếm, trượt ngang kèm fade ở mép phải; danh sách việc/chờ duyệt/lịch đăng/người dùng có nút thu gọn/mở rộng (nhớ vào localStorage); desktop (≥821px) danh sách có vùng cuộn dọc riêng, mobile (≤820px) cuộn trang tự nhiên và tuyệt đối không tràn ngang; thẻ thông báo ngắt được link dài (overflow-wrap:anywhere). Nút "Thêm" ở thanh dưới dùng icon ••• (TD-0015). Mọi modal đều có nút X góc phải trên (TD-0016, bản 0.5.3): vùng chạm tối thiểu 40px, rõ cả sáng lẫn tối, không đè tiêu đề; bấm X chỉ đóng modal, không xác nhận, không hủy lệnh (với modal xác nhận thì X tương đương từ chối, giống bấm ra nền modal). Modal chọn nơi đăng khi không tải được danh sách thì hiện lỗi rõ ràng kèm nút thử lại (TD-0018, bản 0.5.5). Mục "✅ Đã duyệt · chờ đăng" đứng đầu menu Thêm (chỉ người duyệt) và ở sidebar desktop sau "Chờ duyệt", kèm huy hiệu đếm việc (TD-0019, bản 0.5.6 — xem FR-TASK-07). Mọi danh sách liên quan đến việc có vùng cuộn riêng trên desktop + "Xem thêm" theo đợt (10 mục ở danh sách chính, 6 mục ở khối Tổng quan) + "Thu gọn" về số mục mặc định; thẻ kênh ở Chi tiết việc chỉ thêm vùng cuộn (tối đa 5 thẻ nên không cần "Xem thêm") (TD-0022, bản 0.5.9). Dải chip lọc nền đậm và rõ ranh giới hơn (nền #ccfbf1 sáng / #115e59 tối, viền rõ), chip thường viền #2dd4bf, chip đang chọn dùng gradient teal đậm (cùng họ nút Giao việc Mẫu 1) + chữ trắng; fade mép phải khớp nền dải mới (TD-0023, bản 0.5.10) |
 | NFR-MNT-01 | Không thêm thư viện ngoài khi stdlib đáp ứng được; mọi thay đổi ghi vào `NHAT-KY-PHAT-TRIEN.md` và `THAY-DOI.md`; cuối mỗi giai đoạn hoàn thiện lại tài liệu thiết kế/SRS cho khớp |
-| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215; GĐ3: webapp 51/51, bot 215/215; TD-0009/TD-0010: webapp 52/52, bot 215/215; TD-0011: webapp 53/53, bot 215/215, bản app 0.4.0; TD-0012: webapp 53/53, bot 215/215; TD-0013: webapp 54/54, bot 230/230; TD-0014: webapp 54/54, bot 230/230; TD-0015: webapp 57/57, bot 242/242; TD-0016: webapp 58/58, bot 242/242; TD-0017: webapp 58/58, bot 251/251; TD-0018: webapp 58/58, bot 251/251, bản app 0.5.5; TD-0019: webapp 60/60, bot 251/251, bản app 0.5.6; TD-0020: webapp 73/73, bot 256/256, bản app 0.5.7; TD-0021: webapp 74/74, bot 256/256, bản app 0.5.8; TD-0022: webapp 75/75, bot 256/256, bản app 0.5.9; TD-0023: webapp 75/75, bot 256/256, bản app 0.5.10) |
+| NFR-MNT-02 | Kiểm thử tự động: bộ test của Web App và của bot đều phải đạt trước khi coi một giai đoạn là xong (GĐ1: webapp 19/19, bot 215/215; GĐ2: webapp 37/37, bot 215/215; GĐ3: webapp 51/51, bot 215/215; TD-0009/TD-0010: webapp 52/52, bot 215/215; TD-0011: webapp 53/53, bot 215/215, bản app 0.4.0; TD-0012: webapp 53/53, bot 215/215; TD-0013: webapp 54/54, bot 230/230; TD-0014: webapp 54/54, bot 230/230; TD-0015: webapp 57/57, bot 242/242; TD-0016: webapp 58/58, bot 242/242; TD-0017: webapp 58/58, bot 251/251; TD-0018: webapp 58/58, bot 251/251, bản app 0.5.5; TD-0019: webapp 60/60, bot 251/251, bản app 0.5.6; TD-0020: webapp 73/73, bot 256/256, bản app 0.5.7; TD-0021: webapp 74/74, bot 256/256, bản app 0.5.8; TD-0022: webapp 75/75, bot 256/256, bản app 0.5.9; TD-0023: webapp 75/75, bot 256/256, bản app 0.5.10; TD-0024: webapp 87/87, bot 269/269, bản app 0.5.11; TD-0025: webapp 88/88, bot 277/277, bản app 0.5.12; TD-0026: webapp 88/88, bot 290/290, bản app 0.5.13) |
 
 ---
 
@@ -302,13 +314,28 @@ Quy tắc bổ sung:
     tổng kết ngày). Khóa VAPID của máy chủ lưu ngoài DB tại
     `telegram-bot-giao-viec/data/vapid.json` (chmod 600, không vào repo).
   - TD-0013: thêm bảng `facebook_pages` (id, name; seed Fanpage Minhy
-    61595515900524) và `outputs` thêm 6 cột JSON (cộng thêm):
+    1319112221296020 — sửa ở TD-0026; số 61595515900524 ghi ban đầu
+    không dùng được cho API) và `outputs` thêm 6 cột JSON (cộng thêm):
     `publish_targets`, `fb_target_set`, `fb_place_urls`,
     `fb_place_failed`, `fb_place_retracted`, `fb_pending_targets`;
     target đơn cũ (`publish_target`) được hiểu như danh sách 1 phần tử.
   - TD-0015: hàng `web_notification_items` cho sự kiện botctl dùng key
     theo mẫu `published:`/`publish_failed:`/`retracted:` + id đầu ra +
     id audit.
+  - TD-0024: thêm bảng `archived_files` (bản ghi file đã lưu trữ lên
+    Drive) + audit `files_archived`/`files_restored`/`files_archive_failed`/
+    `files_restore_failed`; mốc quét 48h `web_last_archive_scan` trong
+    `web_meta`; phiên tải chia nhỏ lưu tạm ở `data/files/.tmp/<upload_id>/`
+    (dọn phiên dở >24h); chỉ mục Drive của từng việc lưu ở
+    `data/drive_archive.json` (chmod 600, không vào repo).
+  - TD-0025: một định nghĩa quota duy nhất `STORAGE_QUOTA_BYTES` = 9GB
+    ở bot `storage.py` (webapp tái xuất); tổng dung lượng tính cả `.tmp`.
+  - TD-0026: `facebook_pages` seed sửa thành 1319112221296020; di trú
+    `_migrate_fb_page_id()` đổi cả khóa nơi đã lưu (`publish_targets`,
+    `fb_target_set`, `fb_place_urls`, `fb_place_failed`, `fb_place_retracted`,
+    `fb_pending_targets`), idempotent; audit `fb_api_publish_attempt` làm
+    claim chống đăng trùng qua API; module bot mới `facebook_api.py` +
+    `web_notify.py` (dùng chung cho botctl và worker API).
 - Việc gắn đăng nhập web cho tài khoản Telegram sẵn có không tạo dòng trùng.
 - Trạng thái áp dụng: đã áp lên `bot.db` thật ngày 24/10/2026 sau khi sao lưu
   (`data/backup-webapp-20261024-011905/`), dữ liệu cũ nguyên vẹn
@@ -331,7 +358,9 @@ Quy tắc bổ sung:
 | `GET /api/stats/summary?period=today\|week\|month\|all` | Người duyệt | Thống kê tổng hợp |
 | `GET /api/users` | Admin/Phó Admin | Danh sách tài khoản (không có password_hash) |
 | `POST /api/users` | Theo `can_grant` | Tạo tài khoản web mới kèm vai trò |
-| `POST /api/uploads` · `POST /api/tasks` (multipart) · `POST /api/tasks/<code>/files` | Đã cấp quyền | Tải tư liệu (≤200MB/tệp) kèm tạo việc hoặc gắn thêm vào việc | ✅ GĐ2 |
+| `POST /api/uploads` · `POST /api/tasks` (multipart) · `POST /api/tasks/<code>/files` | Đã cấp quyền | Tải tư liệu (≤2GB/tệp qua đường chia nhỏ, TD-0024) kèm tạo việc hoặc gắn thêm vào việc | ✅ GĐ2; tải chia nhỏ ✅ TD-0024 |
+| `POST /api/uploads/chunked/init` · `GET /api/uploads/chunked/<id>` · `POST /api/uploads/chunked/<id>/chunk/<n>` · `POST /api/uploads/chunked/<id>/complete` · `DELETE /api/uploads/chunked/<id>` | Đã cấp quyền | Tải chia nhỏ có tiếp tục được: miếng 50MB, tối đa 2GB/tệp; trạng thái phiên cho biết miếng nào đã nhận để tiếp tục | ✅ TD-0024 |
+| `POST /api/tasks/<code>/restore` | Đã cấp quyền | Tải lại file đã lưu trữ từ Drive về máy chủ | ✅ TD-0024 |
 | `GET /api/files/<code>/<filename>` · `GET /api/outputs/<id>/draft-video` | Xem được việc | Xem/tải tư liệu và phát video nháp (hỗ trợ Range) | ✅ GĐ2 |
 | `POST /api/outputs/<id>/<action>` | Theo ma trận bot | submit / approve / reject / revise / cancel / publish / publish-abort / schedule / schedule-abort / unschedule / retract — khớp audit và trạng thái của bot; publish chấp nhận `targets[]` (target đơn cũ vẫn chạy); máy chủ từ chối 409 khi mọi nơi chọn đều đã khóa (TD-0015) | ✅ GĐ2; chọn nhiều nơi ✅ TD-0013 |
 | `GET /api/facebook-targets` | Đã đăng nhập | Danh sách nơi đăng Facebook (trang cá nhân + các Fanpage trong bảng `facebook_pages`) để modal chọn nơi đăng dùng | ✅ TD-0013 |
@@ -359,6 +388,7 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | Sau GĐ3 | Hoàn thiện giao diện theo phản hồi dùng thật và bản thiết kế mới đã chốt: sửa cache vỏ app + lọc việc theo trạng thái (TD-0009, bản 0.3.1), thanh dưới mobile dạng nổi bo tròn (TD-0010, bản 0.3.2), áp toàn bộ giao diện mới — nav mobile 6 cột + nút Giao việc Mẫu 1, collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống (TD-0011, bản 0.4.0) | ✅ Xong 24/10/2026 (53/53 test webapp, 215/215 test bot; kiểm chứng hiển thị thật ở 320/360/390px và 1440px, sáng + tối) |
 | Sau GĐ3 — đợt sửa theo phản hồi dùng thật | Sửa nav (TD-0012, bản 0.4.1); đăng Facebook nhiều nơi + khóa nơi chờ (TD-0013, bản 0.5.0; TD-0015, bản 0.5.2); giao diện chip/collapse/cuộn + sửa tràn link (TD-0014, bản 0.5.1); nút X đóng modal (TD-0016, bản 0.5.3); botctl gửi kèm Web Push (TD-0017, bản 0.5.4); modal không trống oan + đồng bộ sống + badge/push app Brave (TD-0018, bản 0.5.5) | ✅ Xong 24–25/10/2026 (bản app 0.5.5; webapp 58/58, bot 251/251; kiểm chứng hiển thị thật ở 320/390/1440, sáng + tối — TD-0014; probe Playwright 15/15 — TD-0018) |
 | Sau GĐ3 — đợt 25/10/2026 | Lối tắt "Đã duyệt · chờ đăng" ở menu Thêm + sidebar (TD-0019, bản 0.5.6); Mini App Telegram (TD-0020, bản 0.5.7) + sửa đăng nhập thật (TD-0021, bản 0.5.8); danh sách việc có scroll + "Xem thêm"/"Thu gọn" (TD-0022, bản 0.5.9); dải chip lọc nền nổi hơn + nút chip sửa theo (TD-0023, bản 0.5.10) | ✅ Xong 25/10/2026 (bản app 0.5.10; webapp 75/75, bot 256/256; probe Playwright — TD-0022 51/51, TD-0023 chụp hàng chip 4 combo sáng/tối × mobile/desktop) |
+| Sau GĐ3 — đợt 25/10/2026 (lưu trữ + Graph API) | Tải chia nhỏ + lưu trữ Drive + xóa sau đăng + quét 48h + khôi phục + giới hạn 9GB (TD-0024, bản 0.5.11); giới hạn 9GB cho cả đường Telegram (TD-0025, bản 0.5.12); nối Meta Graph API vào nút Đăng — bài Fanpage đăng thẳng qua API (TD-0026, bản 0.5.13) | ✅ Xong 25/10/2026 (bản app 0.5.13; webapp 88/88, bot 290/290; probe trên bản sao DB — TD-0024 API 25/25 + UI 14/14 + quét 48h 7/7 + khôi phục 11/11, TD-0025 18/18, TD-0026 đăng nháp + thu hồi qua API) |
 | Ngoài lộ trình | Mini App Telegram (bề mặt thêm, cùng backend/bot.db, nút menu bot + lệnh /miniap) | ✅ Xong 25/10/2026 (TD-0020, bản 0.5.7; sửa đăng nhập thật TD-0021, bản 0.5.8; token bot thật đã cấp, đăng nhập thật kiểm chứng 200 cả local lẫn public). GĐ4 (chuyển đội + tắt dần bot) vẫn TẠM DỪNG |
 | Ngoài lộ trình | Đóng gói native (Capacitor) khi thật sự cần | 📋 |
 
@@ -374,3 +404,4 @@ Cổng mặc định 8790; cấu hình qua biến môi trường (xem `README.md
 | 1.3 | 24/10/2026 | Tổng hợp TD-0007 (phần tên miền/HTTPS của GĐ4: post.iaict-platform.com qua Cloudflare Tunnel + 2 dịch vụ phụ trợ cf-dns-stub/cf-edge-relay do netstack máy chủ ảo), TD-0009 (sửa cache vỏ app network-first + SW v4, thẻ thông báo đẩy luôn hiện kèm trạng thái, bỏ hàng chip-nav trùng mobile, lọc việc theo trạng thái kèm counts, gọn block chọn file; bản 0.3.1), TD-0010 (thanh dưới mobile dạng nổi bo tròn, mục chọn viên thuốc teal nhạt, nút Giao việc tròn nổi; bản 0.3.2), TD-0011 (áp toàn bộ giao diện mới đã chốt: nav mobile 6 cột + nút Giao việc Mẫu 1 "Gradient viền trắng" 54px không đổ bóng nhô 19px, badge tròn 19×19, bảng "Thêm", collapse/scroll, wizard footer nút chính lên trên, dark mode theo hệ thống; bản 0.4.0, SW cache v6). Kiểm thử: webapp 53/53, bot 215/215; kiểm chứng hiển thị thật ở 320/360/390px và 1440px, sáng + tối. Việc còn lại: chuyển đội + tắt dần bot (GĐ4) |
 | 1.4 | 25/10/2026 | Tổng hợp TD-0012 (sửa nav mobile: nút Giao việc 58px nhô ~7px, nút thanh dưới khi active nền trong suốt sửa lỗi chữ chìm; bản 0.4.1, SW cache v7), TD-0013 (đăng Facebook nhiều nơi cùng lúc: khóa nơi `profile`/`page_<id>`, bảng `facebook_pages` + 6 cột outputs mới, picker bot toggle + modal web checkbox, PUBLISHED chỉ khi đủ các nơi, thu hồi từng nơi, lịch lưu cả tập hợp; bản 0.5.0, SW cache v8), TD-0014 (dải chip lọc nổi bật + fade, nút thu gọn danh sách nhớ localStorage, quy tắc cuộn desktop/mobile, sửa thông báo tràn link dài; bản 0.5.1, SW cache v9), TD-0015 (khóa nơi đang chờ đăng + chặn 409 + hủy dọn request, link Facebook kiểu cũ suy từ audit, botctl ghi hàng web khi đăng/thu hồi, badge PWA, icon Thêm •••, tải thêm tư liệu muộn có chú thích + báo người duyệt/Admin; bản 0.5.2, SW cache v10), TD-0016 (nút X đóng modal góc phải trên, chỉ đóng không xác nhận; bản 0.5.3, SW cache v11), TD-0017 (botctl đăng/thu hồi/lỗi gửi kèm Web Push tới mọi subscription, tôn trọng `--no-notify`, lỗi gửi không hỏng lệnh; bản 0.5.4, SW cache v12), TD-0018 (modal nơi đăng không cache kết quả lỗi + nút thử lại, đồng bộ sống poll 30 giây + quay lại app + SW postMessage "gv-push", giới hạn badge thật trên Chromium Android/Brave đã xác minh theo MDN; bản 0.5.5, SW cache v13). Kiểm thử: webapp 58/58, bot 251/251. Việc còn lại: chuyển đội + tắt dần bot (GĐ4, TẠM DỪNG theo quyết định chủ dự án 24/10/2026), Mini App Telegram (tạm dừng), kênh Website (chưa có link), SMS Meta chưa xác nhận, đăng YouTube/TikTok thật (GĐ3 bot) |
 | 1.5 | 25/10/2026 | Tổng hợp TD-0019 (lối tắt "✅ Đã duyệt · chờ đăng" đứng đầu menu Thêm + sidebar desktop, chỉ người duyệt, huy hiệu đếm việc từ `counts` của `GET /api/tasks`, deep-link `#tasks?status=APPROVED_WAITING`; bản 0.5.6, SW cache v14), TD-0020 (Mini App Telegram: entry `/miniap/` cùng shell PWA, SDK + themeParams + BackButton/MainButton/haptic, xác thực initData HMAC, nút menu bot "Mở Mini App" + lệnh `/miniap`, chỉ người có vai trò; bản 0.5.7, SW cache v15), TD-0021 (chẩn đoán lỗi đăng nhập Mini App thật: log lý do từ chối + hiện đúng lý do thay vì câu chung chung; sửa gốc — đường HMAC chỉ loại `hash`, `signature` vẫn nằm trong data-check-string; bản 0.5.8, SW cache v16), TD-0022 (mọi danh sách việc có scroll + "Xem thêm" theo đợt 10 mục (6 mục khối Tổng quan) + "Thu gọn"; thẻ kênh Chi tiết việc chỉ thêm vùng cuộn; bản 0.5.9, SW cache v17), TD-0023 (dải chip lọc nền đậm hơn #ccfbf1/#115e59, chip đang chọn gradient teal đậm cùng họ nút Giao việc Mẫu 1; bản 0.5.10, SW cache v18). Kiểm thử: webapp 75/75, bot 256/256; bản app 0.5.10. Việc còn lại: chuyển đội + tắt dần bot (GĐ4, TẠM DỪNG), kênh Website (chưa có link), SMS Meta chưa xác nhận, đăng YouTube/TikTok thật (GĐ3 bot); tài liệu thiết kế riêng của bot chưa gộp các thay đổi phía bot (TD-0013/0015/0017/0020) |
+| 1.6 | 25/10/2026 | Tổng hợp TD-0024 (tải chia nhỏ miếng 50MB, tối đa 2GB/tệp; lưu trữ Drive + xóa sau khi TẤT CẢ đầu ra đã đăng; quét 48h việc chờ duyệt/chờ đăng; khôi phục từ Drive bằng nút + tự động khi Đăng/Đặt lịch; giới hạn tổng 9GB + thanh dung lượng ở Thống kê; mọi thời gian dùng giờ VN; sửa lỗi server không xả body POST keep-alive gây 501; bản 0.5.11, SW cache v19), TD-0025 (giới hạn 9GB áp dụng cả đường Telegram — khi đầy file gửi thẳng lên Drive, Drive lỗi thì giữ local + báo Admin; một định nghĩa quota duy nhất ở bot `storage.py`; bản 0.5.12, SW cache v20), TD-0026 (nối Meta Graph API vào nút Đăng: bài Fanpage đăng thẳng qua API — chữ qua `/feed`, ảnh qua multipart + `attached_media`, tối đa 10 ảnh, thu hồi qua API, lịch đăng cũng đi đường API; sửa ID trang Minhy dùng cho API thành 1319112221296020; token System User không thời hạn, 3 quyền; bản 0.5.13, SW cache v21). Kiểm thử: webapp 88/88, bot 290/290; bản app 0.5.13. Việc còn lại: chuyển đội + tắt dần bot (GĐ4, TẠM DỪNG), kênh Website (chưa có link), đăng YouTube/TikTok thật (GĐ3 bot); việc không bao giờ đăng (hủy/bỏ dở) chưa có quy tắc dọn; miếng 50MB có thể chạm timeout Cloudflare trên 4G yếu; worker lưu trữ Drive không có hàng đợi bền; bài Fanpage thật đầu tiên qua API là lần chứng minh cuối |
