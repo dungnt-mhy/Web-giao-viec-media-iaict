@@ -46,6 +46,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import VERSION
 from .auth import hash_password, new_session_token, verify_password
 from .db import WebDB, bot_dir, default_db_path, import_bot_modules
+from .telegram_auth import InitDataError, get_bot_token, validate_init_data
 from .push import PushService, default_vapid_path
 
 storage, roles, stats = import_bot_modules()
@@ -78,6 +79,11 @@ CREATOR_ROLES = roles.ALL_ROLES
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
+    # TD-0020: Mini App Telegram serves the same PWA shell under its
+    # own path (the dispatch strips a trailing slash, so "/miniap/"
+    # arrives here as "/miniap").
+    "/miniap": ("index.html", "text/html; charset=utf-8"),
+    "/miniap/index.html": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/manifest.webmanifest": ("manifest.webmanifest",
@@ -394,6 +400,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if method == "POST" and path == "/api/auth/login":
                 return self._login()
+            if method == "POST" and path == "/api/auth/telegram":
+                return self._telegram_login()
             if method == "POST" and path == "/api/auth/logout":
                 return self._logout()
             if method == "GET" and path == "/api/auth/me":
@@ -510,6 +518,40 @@ class Handler(BaseHTTPRequestHandler):
                   f"SameSite=Lax; Max-Age={SESSION_TTL_DAYS * 86400}")
         self._send_json(HTTPStatus.OK,
                         {"user": user_public(user), "token": token},
+                        headers={"Set-Cookie": cookie})
+
+    def _telegram_login(self) -> None:
+        """Mini App login via Telegram initData (TD-0020).
+
+        Validates the initData HMAC with the bot token, maps the
+        Telegram user id to a system user, and issues a normal web
+        session (same web_sessions mechanism as password login). Only
+        users who already have a role may enter; strangers and
+        role-less accounts get the same 403 so existence is not leaked.
+        """
+        body = self._read_json()
+        init_data = body.get("init_data") or ""
+        token = get_bot_token()
+        if token is None:
+            raise ApiError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "Mini App chưa được cấu hình (thiếu token bot).")
+        try:
+            tg_user = validate_init_data(str(init_data), token)
+        except InitDataError as err:
+            raise ApiError(HTTPStatus.UNAUTHORIZED, str(err))
+        user = self.app.webdb.get_user(tg_user["id"])
+        if user is None or not user["role"]:
+            raise ApiError(HTTPStatus.FORBIDDEN,
+                           "Tài khoản Telegram này chưa được cấp quyền "
+                           "trong hệ thống.")
+        session_token = new_session_token()
+        self.app.webdb.create_session(
+            user["telegram_id"], session_token, ttl_days=SESSION_TTL_DAYS)
+        cookie = (f"{SESSION_COOKIE}={session_token}; HttpOnly; Path=/; "
+                  f"SameSite=Lax; Max-Age={SESSION_TTL_DAYS * 86400}")
+        self._send_json(HTTPStatus.OK,
+                        {"user": user_public(user), "token": session_token},
                         headers={"Set-Cookie": cookie})
 
     def _logout(self) -> None:

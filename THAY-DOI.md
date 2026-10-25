@@ -588,6 +588,65 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0020 — Mini App Telegram (bề mặt thêm, cùng backend + bot.db) (bản 0.5.7)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án ("Ok rồi; làm miniapp",
+  tiếp tục sau khi tạm dừng từ 19:10 ngày 24/10). Bot Telegram và Web
+  App PWA giữ nguyên toàn bộ, KHÔNG chuyển đội, KHÔNG tắt dần bot
+  (GĐ4 vẫn tạm dừng theo lệnh "Không chuyển nhé" ngày 24/10).
+- Nội dung thay đổi:
+  - Entry Mini App `/miniap/` (+ `/miniap/index.html`) phục vụ cùng
+    shell PWA (app.js/styles.css/API), không viết lại giao diện.
+    Frontend nhận biết chế độ Mini App (đường dẫn /miniap hoặc
+    `window.Telegram.WebApp`), tải Telegram WebApp SDK, áp themeParams
+    lên biến màu CSS, expand viewport, nút Back hệ thống theo route,
+    MainButton ở bước cuối wizard giao việc, haptic cho thao tác chính.
+    Không hiện màn đăng nhập email/mật khẩu trong Mini App; ẩn nút đổi
+    mật khẩu/đăng xuất (Mini App gắn với danh tính Telegram).
+  - Xác thực bằng Telegram initData: `POST /api/auth/telegram`
+    kiểm chứng chữ ký HMAC-SHA256 theo đúng chuẩn Telegram
+    (secret = HMAC-SHA256("WebAppData", bot_token), data-check-string
+    sắp xếp theo key, `auth_date` tối đa 24 giờ), map `user.id` sang
+    users.telegram_id, chỉ người đã có vai trò mới vào được; cấp phiên
+    web dùng chung cơ chế web_sessions (cookie + Bearer).
+  - **Giới hạn cấu hình đã xác minh trước khi code:** token bot thật
+    KHÔNG lấy được từ chỗ bot đang dùng — bot chỉ có surrogate
+    `hsurr:` của kết nối custom.telegram (authd chỉ trả surrogate,
+    không trả giá trị thật; không có TELEGRAM_BOT_TOKEN trong bất kỳ
+    file /etc/default/* nào; unit bot ghi rõ token không đặt ở đó).
+    Server đọc token từ biến môi trường `TELEGRAM_BOT_TOKEN`; khi
+    chưa có thì endpoint trả 503 "Mini App chưa được cấu hình" và Mini
+    App hiện thông báo rõ. Muốn đăng nhập thật bằng Mini App cần cấp
+    token qua Secure Vault rồi đặt vào /etc/default/webapp-giao-viec
+    (mode 600) và restart webapp. Test/probe dùng token test riêng
+    trong fixture, KHÔNG dùng token thật, KHÔNG commit token.
+  - Phía bot: `setChatMenuButton` (WebApp → URL Mini App) đặt theo
+    từng chat của người đã có vai trò (kèm đồng bộ khi cấp/thu hồi
+    quyền), lệnh `/miniap` gửi nút mở Mini App; khách lạ bấm vào thì
+    Mini App tự từ chối đăng nhập, không lộ dữ liệu.
+  - **Sửa sau kiểm chứng sống (25/10, trong đợt TD-0020):**
+    (1) Bot API hiện tại KHÔNG có `deleteChatMenuButton` (đối chiếu
+    docs chính thức Bot API 10.3: chỉ còn set/getChatMenuButton; gọi
+    phương thức đã bỏ trả HTTP 404) — nhánh thu hồi quyền nay reset
+    nút bằng `setChatMenuButton` với `{"type": "default"}`.
+    (2) `setChatMenuButton` KHÔNG có tham số `scope` (tham số đó chỉ
+    thuộc `setMyCommands`); bản đầu truyền `scope` nên Telegram lờ
+    đi và đặt nhầm nút WebApp lên nút MẶC ĐỊNH chung (mọi người dùng
+    kể cả khách lạ đều thấy), còn chat Admin vẫn ở `default`. Nay
+    truyền đúng `chat_id`. Kiểm chứng sống sau sửa: chat Admin →
+    web_app "Mở Mini App", nút mặc định → `commands`. Lưu ý: thay
+    đổi nút mặc định lan truyền chậm (~2 phút mới đọc lại được giá
+    trị mới), thay đổi theo chat thì gần như tức thì.
+- Ảnh hưởng: webapp (auth + entry + SDK) và bot (menu button +
+  /miniap); không đổi hành vi bot/PWA hiện tại, phân quyền, luồng
+  duyệt/đăng/lịch, thông báo/push. Bản 0.5.6 → 0.5.7 (VERSION,
+  APP_VERSION, ?v=0.5.7, SW cache v15). Kiểm thử: webapp + bot phải
+  xanh; test mới: kiểm chứng initData (đúng cho qua, sai/tamper/hết
+  hạn bị từ chối, user lạ/không vai trò bị từ chối), menu button +
+  /miniap, entry Mini App trả đúng shell.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

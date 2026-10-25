@@ -29,6 +29,9 @@ from webapp.app import (  # noqa: E402
     ICT, App, daily_summary_data, make_server, maybe_send_daily_summary,
 )
 from webapp.auth import hash_password, verify_password  # noqa: E402
+from webapp.telegram_auth import (  # noqa: E402
+    InitDataError, sign_init_data, validate_init_data,
+)
 from webapp.db import SYNTHETIC_ID_BASE, WebDB, bot_dir, import_bot_modules  # noqa: E402
 
 storage, roles, stats = import_bot_modules()
@@ -642,17 +645,17 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.6")
+        self.assertEqual(data["version"], "0.5.7")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.6", html)
+        self.assertIn("?v=0.5.7", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.6", js)
+        self.assertIn("0.5.7", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -720,8 +723,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v14", raw)
-        self.assertIn(b"app.js?v=0.5.6", raw)
+        self.assertIn(b"giao-viec-iaict-v15", raw)
+        self.assertIn(b"app.js?v=0.5.7", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
@@ -1583,6 +1586,97 @@ class WebAppTestCase(unittest.TestCase):
         self.assertTrue(mine[0]["read"])
 
 
+    def _with_test_token(self):
+        old = os.environ.get("TELEGRAM_BOT_TOKEN")
+        os.environ["TELEGRAM_BOT_TOKEN"] = TEST_BOT_TOKEN
+        self.addCleanup(
+            lambda: (os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+                     if old is None
+                     else os.environ.__setitem__("TELEGRAM_BOT_TOKEN", old)))
+
+    def test_telegram_login_success_and_me(self):
+        self.store.register_user(777001, "tgtest", "TG Test", 777001)
+        self.store.set_role(777001, roles.ROLE_EDITOR)
+        self._with_test_token()
+        status, data, _ = self.req(
+            "POST", "/api/auth/telegram",
+            {"init_data": _signed_init_data(777001)})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["user"]["id"], 777001)
+        token = data["token"]
+        status, data, _ = self.req("GET", "/api/auth/me", token=token)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["user"]["id"], 777001)
+
+    def test_telegram_login_tampered_is_401(self):
+        self._with_test_token()
+        signed = _signed_init_data(777001).replace("777001", "777002")
+        status, data, _ = self.req(
+            "POST", "/api/auth/telegram", {"init_data": signed})
+        self.assertEqual(status, 401, data)
+
+    def test_telegram_login_unknown_and_roleless_are_403(self):
+        self._with_test_token()
+        status, data, _ = self.req(
+            "POST", "/api/auth/telegram",
+            {"init_data": _signed_init_data(777003)})
+        self.assertEqual(status, 403, data)
+        self.store.register_user(777002, "norole", "No Role", 777002)
+        status, data, _ = self.req(
+            "POST", "/api/auth/telegram",
+            {"init_data": _signed_init_data(777002)})
+        self.assertEqual(status, 403, data)
+
+    def test_telegram_login_without_token_is_503(self):
+        old = os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        self.addCleanup(
+            lambda: (os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+                     if old is None
+                     else os.environ.__setitem__("TELEGRAM_BOT_TOKEN", old)))
+        status, data, _ = self.req(
+            "POST", "/api/auth/telegram",
+            {"init_data": _signed_init_data(777001)})
+        self.assertEqual(status, 503, data)
+
+    def test_miniapp_entry_serves_shell(self):
+        status, raw, _ = self.req_bytes("GET", "/miniap/")
+        self.assertEqual(status, 200)
+        self.assertIn("Giao Việc IAICT".encode("utf-8"), raw)
+        status, raw, _ = self.req_bytes("GET", "/miniap/index.html")
+        self.assertEqual(status, 200)
+        self.assertIn(b"telegram-web-app.js", raw)
+        status, raw, _ = self.req_bytes("GET", "/app.js")
+        js = raw.decode("utf-8")
+        self.assertIn("initData", js)
+        self.assertIn("gv-session-token", js)
+        self.assertIn("/api/auth/telegram", js)
+        self.assertIn("syncTelegramChrome", js)
+        self.assertIn("tgHaptic", js)
+
+
+# ------------------------------------------------------- TD-0020: Mini App
+
+#: Clearly fake bot token used ONLY to sign test initData fixtures.
+#: Never the real token; never committed anywhere else.
+TEST_BOT_TOKEN = "123456789:TEST-TOKEN-FOR-UNIT-TESTS-ONLY-abcdef0123456789"
+
+
+def _signed_init_data(user_id, token=TEST_BOT_TOKEN, auth_date=None,
+                      **extra):
+    import time as _time
+
+    fields = {
+        "auth_date": str(
+            auth_date if auth_date is not None else int(_time.time())),
+        "query_id": "TESTQUERY123",
+        "user": json.dumps(
+            {"id": user_id, "first_name": "TG", "username": "tgtest"},
+            ensure_ascii=False, separators=(",", ":")),
+    }
+    fields.update(extra)
+    return sign_init_data(fields, token)
+
+
 class PushCryptoTests(unittest.TestCase):
     """GĐ3 crypto units: AES-128-GCM against reference vectors
     (cross-verified with OpenSSL), ECDH/ECDSA via openssl, and the
@@ -1844,6 +1938,67 @@ class DailySummaryFreshTests(unittest.TestCase):
             self.assertEqual(len(fake.requests), 2)
         finally:
             fake.stop()
+
+
+
+class TelegramInitDataTests(unittest.TestCase):
+    """Pure initData validation (no server): TD-0020."""
+
+    def test_valid_round_trip_returns_user(self):
+        user = validate_init_data(_signed_init_data(777001), TEST_BOT_TOKEN)
+        self.assertEqual(user["id"], 777001)
+        self.assertEqual(user["username"], "tgtest")
+
+    def test_tampered_user_id_is_rejected(self):
+        signed = _signed_init_data(777001).replace("777001", "777002")
+        with self.assertRaises(InitDataError):
+            validate_init_data(signed, TEST_BOT_TOKEN)
+
+    def test_wrong_token_is_rejected(self):
+        signed = _signed_init_data(777001, token="999:OTHER-TEST-TOKEN")
+        with self.assertRaises(InitDataError):
+            validate_init_data(signed, TEST_BOT_TOKEN)
+
+    def test_expired_auth_date_is_rejected(self):
+        import time as _time
+
+        signed = _signed_init_data(777001, auth_date=int(_time.time()) - 90000)
+        with self.assertRaises(InitDataError):
+            validate_init_data(signed, TEST_BOT_TOKEN)
+
+    def test_future_auth_date_is_rejected(self):
+        import time as _time
+
+        signed = _signed_init_data(777001, auth_date=int(_time.time()) + 3600)
+        with self.assertRaises(InitDataError):
+            validate_init_data(signed, TEST_BOT_TOKEN)
+
+    def test_missing_hash_is_rejected(self):
+        import time as _time
+        from urllib.parse import urlencode
+
+        raw = urlencode({
+            "auth_date": str(int(_time.time())),
+            "user": json.dumps({"id": 777001}),
+        })
+        with self.assertRaises(InitDataError):
+            validate_init_data(raw, TEST_BOT_TOKEN)
+
+    def test_missing_user_is_rejected(self):
+        import time as _time
+
+        fields = {"auth_date": str(int(_time.time())),
+                  "query_id": "TESTQUERY123"}
+        with self.assertRaises(InitDataError):
+            validate_init_data(sign_init_data(fields, TEST_BOT_TOKEN),
+                               TEST_BOT_TOKEN)
+
+    def test_signature_field_is_excluded_from_check_string(self):
+        # Telegram's Ed25519 third-party-validation field must not
+        # break the HMAC path: it is excluded from the check string.
+        signed = _signed_init_data(777001, signature="deadbeef0123")
+        user = validate_init_data(signed, TEST_BOT_TOKEN)
+        self.assertEqual(user["id"], 777001)
 
 
 if __name__ == "__main__":

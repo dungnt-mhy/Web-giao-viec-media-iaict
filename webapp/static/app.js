@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.6";
+const APP_VERSION = "0.5.7";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -57,6 +57,77 @@ const state = {
   wizard: null,
   usersCache: [],
 };
+
+/* ==================== Telegram Mini App (TD-0020) ====================
+   The same shell doubles as a Telegram Mini App under /miniap/.
+   Outside Telegram, window.Telegram has no initData and every call
+   below is guarded, so the PWA is unaffected. */
+const tg = window.Telegram?.WebApp || null;
+const IS_MINIAPP = location.pathname.startsWith("/miniap")
+  || Boolean(tg?.initData);
+const SESSION_TOKEN_KEY = "gv-session-token";
+
+function tgHaptic(kind = "light") {
+  try {
+    if (kind === "success" || kind === "error" || kind === "warning") {
+      tg?.HapticFeedback?.notificationOccurred(kind);
+    } else {
+      tg?.HapticFeedback?.impactOccurred(kind);
+    }
+  } catch {}
+}
+
+function initTelegramUI() {
+  if (!tg) return;
+  try {
+    tg.ready();
+    tg.expand();
+    // Theme: map Telegram themeParams onto the app's CSS variables.
+    const params = tg.themeParams || {};
+    const root = document.documentElement.style;
+    if (params.bg_color) root.setProperty("--bg", params.bg_color);
+    if (params.text_color) root.setProperty("--ink", params.text_color);
+    if (params.hint_color) root.setProperty("--muted", params.hint_color);
+    if (params.secondary_bg_color) {
+      root.setProperty("--card", params.secondary_bg_color);
+    }
+    if (params.button_color) root.setProperty("--teal", params.button_color);
+    if (params.header_bg_color) {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", params.header_bg_color);
+    }
+    // System Back button: back to the previous screen (dashboard on top).
+    tg.BackButton?.onClick(() => {
+      if (state.route === "detail" || state.route === "create") {
+        navigate("tasks");
+      } else if (state.route !== "dashboard") {
+        navigate("dashboard");
+      }
+    });
+    // MainButton: the wizard's final submit, wherever the button sits.
+    tg.MainButton?.onClick(() => {
+      if (state.route === "create" && state.wizard?.step === 3) {
+        submitWizard();
+      }
+    });
+  } catch {}
+}
+
+function syncTelegramChrome() {
+  if (!tg) return;
+  try {
+    // Back button on every screen except the dashboard / login.
+    if (state.route && state.route !== "dashboard") tg.BackButton?.show();
+    else tg.BackButton?.hide();
+    // MainButton only on the wizard's final step (step 3).
+    if (state.route === "create" && state.wizard?.step === 3) {
+      tg.MainButton?.setText("🚀 Chốt! Gửi Muse");
+      tg.MainButton?.show();
+    } else {
+      tg.MainButton?.hide();
+    }
+  } catch {}
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -92,8 +163,19 @@ function toast(message, isError = false) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { credentials: "same-origin", ...options });
+  // TD-0020: a stored session token rides as a Bearer header when the
+  // browser (e.g. Telegram's WebView) does not reliably persist the
+  // HttpOnly cookie. The server checks Bearer first, then the cookie.
+  const headers = { ...(options.headers || {}) };
+  try {
+    const stored = localStorage.getItem(SESSION_TOKEN_KEY);
+    if (stored && !headers.Authorization) {
+      headers.Authorization = `Bearer ${stored}`;
+    }
+  } catch {}
+  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
   if (response.status === 401 && !path.startsWith("/api/auth/login")) {
+    try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch {}
     showLogin();
     throw new Error("Phiên đăng nhập đã hết hạn.");
   }
@@ -384,6 +466,7 @@ function navigate(route, taskCode = null) {
     screen.innerHTML = `<div class="empty">❌ ${esc(err.message)}</div>`;
   });
   refreshBadge();
+  syncTelegramChrome(); // TD-0020: Back/Main buttons follow the route
 }
 
 /* ============================== auth ============================== */
@@ -396,6 +479,15 @@ function showLogin() {
 function showApp() {
   $("#loginView").hidden = true;
   $("#appView").hidden = false;
+  // TD-0020: in the Mini App the identity comes from Telegram — no
+  // password change and no logout (closing Telegram ends the view;
+  // the session is re-issued silently on the next open).
+  if (IS_MINIAPP) {
+    for (const id of ["passwordBtn", "logoutBtn", "passwordBtnMobile", "logoutBtnMobile"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    }
+  }
   const me = state.me;
   $("#sideAvatar").textContent = (me.display_name || "?").trim().charAt(0).toUpperCase();
   $("#sideUserName").textContent = me.display_name;
@@ -414,14 +506,48 @@ function showApp() {
   else navigate("dashboard");
 }
 
+function showMiniappError(message) {
+  // TD-0020: a refused Mini App login shows a plain error instead of
+  // the email/password form (useless inside Telegram).
+  $("#loginView").hidden = false;
+  $("#appView").hidden = true;
+  const form = $("#loginForm");
+  if (form) form.hidden = true;
+  const err = $("#miniapError");
+  if (err) {
+    err.hidden = false;
+    err.textContent = message
+      || "Không mở được Mini App. Hãy mở lại từ nút menu của bot @iaict_media_bot.";
+  }
+}
+
 async function boot() {
+  initTelegramUI();
   try {
     const data = await api("/api/auth/me");
     state.me = data.user;
     showApp();
+    return;
   } catch {
-    showLogin();
+    // No live session: the Mini App tries initData, the PWA shows login.
   }
+  if (IS_MINIAPP && tg?.initData) {
+    try {
+      const data = await apiJson("/api/auth/telegram", "POST", {
+        init_data: tg.initData,
+      });
+      if (data.token) {
+        try { localStorage.setItem(SESSION_TOKEN_KEY, data.token); } catch {}
+      }
+      state.me = data.user;
+      showApp();
+      toast(`Xin chào ${data.user.display_name}!`);
+    } catch (err) {
+      showMiniappError(err.message);
+    }
+    return;
+  }
+  showLogin();
 }
 
 $("#loginForm").addEventListener("submit", async (event) => {
@@ -433,6 +559,9 @@ $("#loginForm").addEventListener("submit", async (event) => {
       password: $("#passwordInput").value,
     });
     state.me = data.user;
+    if (data.token) {
+      try { localStorage.setItem(SESSION_TOKEN_KEY, data.token); } catch {}
+    }
     $("#passwordInput").value = "";
     showApp();
     toast(`Xin chào ${data.user.display_name}!`);
@@ -443,6 +572,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
 
 async function logout() {
   await apiJson("/api/auth/logout", "POST").catch(() => {});
+  try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch {}
   state.me = null;
   showLogin();
 }
@@ -816,6 +946,7 @@ async function renderCreate() {
   }
   const next = $("#wizardNext");
   if (next) next.addEventListener("click", () => { capture(); w.step++; renderCreate(); });
+  syncTelegramChrome(); // TD-0020: MainButton only on the final step
 }
 
 function previewTile(file, index) {
@@ -841,9 +972,11 @@ async function submitWizard() {
     const data = await api("/api/tasks", { method: "POST", body: form });
     state.wizard = newWizard();
     toast(`✅ Đã tạo việc ${data.task.code} và gửi cho Muse.`);
+    tgHaptic("success"); // TD-0020
     navigate("detail", data.task.code);
   } catch (err) {
     btn.disabled = false; btn.textContent = "🚀 Chốt! Gửi Muse";
+    tgHaptic("error"); // TD-0020
     toast(err.message, true);
   }
 }
@@ -1187,7 +1320,8 @@ async function publishFlow(id, reload, alreadyPending = false) {
     if (!selected.length) { toast("Hãy chọn ít nhất 1 nơi đăng.", true); return; }
     try {
       const data = await callOutput(id, "publish", { targets: selected });
-      closeModal(); toast(`✅ ${data.message}`); await reload(); refreshBadge();
+      closeModal(); toast(`✅ ${data.message}`); tgHaptic("success"); // TD-0020
+      await reload(); refreshBadge();
     } catch (err) { toast(err.message, true); }
   });
   $("[data-abort]").addEventListener("click", async () => {
