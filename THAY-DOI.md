@@ -813,7 +813,11 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   tải lên từ chối file mới khi tổng dung lượng sẽ vượt 9GB (thông báo
   rõ lý do), và màn Thống kê hiển thị mức đã dùng (X/9GB). Cơ chế quét
   48h chạy nền định kỳ (tái dùng cơ chế job có sẵn của webapp, ví dụ
-  luồng tổng kết 20:00).
+  luồng tổng kết 20:00). Mọi thời gian trong TD-0024 (tính 48h, thời
+  điểm lưu trữ/khôi phục trong log/audit và hiển thị) dùng giờ Việt
+  Nam (Asia/Saigon, UTC+7); 48h là khoảng thời gian tuyệt đối, hiển
+  thị theo giờ VN. (Đính chính của chủ dự án 25/10: tất cả dùng giờ
+  Việt Nam.)
 - Điều kiện tiên quyết: Google Drive phải được nối thì mới xây/kiểm
   chứng được chân lưu trữ Drive; chân tải chia nhỏ không cần Drive.
   Đã nối xong 25/10 (trước khi chọn cách A).
@@ -874,8 +878,8 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   `finally` xả (drain) body chưa đọc của mọi POST/PUT/PATCH/DELETE
   (`_read_json`, `_parse_multipart`, `_chunk_put` đánh dấu đã đọc);
   có test hồi quy keep-alive (complete rồi GET cùng kết nối → 200).
-- Kiểm thử: webapp 87/87 (75 + 12 test mới TD-0024), bot 268/268
-  (256 + 12 test mới). Probe Playwright trên BẢN SAO DB (DB thật
+- Kiểm thử: webapp 87/87 (75 + 12 test mới TD-0024), bot 269/269
+  (256 + 13 test mới: 12 TD-0024 + 1 đính chính ICT). Probe Playwright trên BẢN SAO DB (DB thật
   không đổi — kiểm chứng: chỉ thêm 1 dòng `web_notification_reads`
   do chính người dùng đọc thông báo trong lúc probe; 16 việc, 26 đầu
   ra, 141 audit đều nguyên): API 25/25 (chunked 120MB thật: init/
@@ -887,6 +891,30 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   lên Drive + biến khỏi đĩa, trạng thái giữ PENDING, việc mới tạo
   không bị chạm); khôi phục 48h 11/11 (UI + botctl, file về đúng
   từng byte). Thư mục Drive gốc đã dọn sạch sau probe.
+- Đính chính giờ Việt Nam (chủ dự án, 25/10 — gộp vào TD-0024
+  trước khi đóng, cùng bản 0.5.11, không tăng version): mọi thời
+  gian người dùng đọc được đều là giờ VN. Một định nghĩa ICT duy
+  nhất ở `storage.py` (`ICT`, `ict_now()`, `format_ict()`,
+  `format_ict_short()`); `webapp/app.py:83` tái xuất nó
+  (`ICT = storage.ICT`, không định nghĩa múi giờ thứ hai). DB vẫn
+  lưu UTC nội bộ; chuyển đổi sang ICT ở biên hiển thị/log: tile
+  file lưu trữ hiện "Đã lưu trữ trên Drive · lúc HH:MM DD/MM/YYYY"
+  (API trả `archived_at` UTC ISO, client render qua `fmtTime` vốn
+  ép `Asia/Ho_Chi_Minh`); chi tiết audit `files_archived` /
+  `files_restored` / `files_archive_failed` / `files_restore_failed`
+  thêm `lúc HH:MM DD/MM/YYYY` giờ VN; dòng log worker
+  (`data/archive.log`) tiền tố `[DD/MM HH:MM]` giờ VN; dòng in
+  quét 48h tiền tố giờ VN. Tính 48h vẫn trừ theo UTC (khoảng thời
+  gian tuyệt đối, không phụ thuộc múi giờ). Probe ICT trên bản sao
+  DB 10/10 + in quét 48h (in-process, vì stdout server khi redirect
+  ra file bị block-buffered nên log file không thấy ngay — bản in
+  vẫn đúng): tile hiện đúng giờ VN (= UTC + 7h), không lọt chuỗi
+  ISO UTC; audit `lúc ...` khớp created_at UTC + 7h; log worker và
+  dòng quét đều tiền tố giờ VN; quét lỗi (thư mục Drive đã xóa) giữ
+  nguyên file local đúng thiết kế. DB thật kiểm chứng lại sau probe
+  ICT: 0 audit `files_*`, bảng `archived_files` 0 dòng, chỉ thêm
+  meta `web_last_archive_scan` của app đang chạy và lượt đọc thông
+  báo của người dùng.
 - Giới hạn còn tồn tại: (1) tốc độ upload Drive thật với file lớn
   chưa đo (probe chỉ tải file 14 byte; upload 1GB lên Drive qua
   proxy mất hàng phút, chạy nền nên không chặn đăng bài); (2) miếng

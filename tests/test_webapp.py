@@ -1955,6 +1955,15 @@ class WebAppTestCase(unittest.TestCase):
         self.assertEqual(archived[0]["name"], "anh-cu.jpg")
         self.assertEqual(archived[0]["url"],
                          "https://drive.example/anh-cu.jpg")
+        # TD-0024 correction (25/10): the detail carries archived_at
+        # (UTC ISO, DB convention) and the tile renders it through
+        # fmtTime (Asia/Ho_Chi_Minh) — the user reads Vietnam time.
+        self.assertIn("archived_at", archived[0])
+        self.assertTrue(archived[0]["archived_at"].endswith("+00:00"),
+                        archived[0]["archived_at"])
+        status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
+        js = raw.decode("utf-8")
+        self.assertIn("lúc ${fmtTime(file.archived_at)}", js)
 
     def test_restore_endpoint_downloads_back(self):
         import archive as archive_mod

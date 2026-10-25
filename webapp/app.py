@@ -80,7 +80,7 @@ CHUNK_TMP_TTL_SECONDS = 24 * 3600
 #: data/files/ tree, tmp chunks included) may not exceed 9GB.
 STORAGE_QUOTA_BYTES = 9 * 1024 * 1024 * 1024
 
-ICT = timezone(timedelta(hours=7), name="ICT")
+ICT = storage.ICT  # single definition lives in storage.py; re-exported here
 
 
 def _fb_targets_response(store):
@@ -734,6 +734,11 @@ class Handler(BaseHTTPRequestHandler):
                 "url": row["web_view_link"],
                 "archived": True,
                 "drive_file_id": row["drive_file_id"],
+                # TD-0024 correction (25/10): the stored value is a
+                # UTC ISO (DB convention, like created_at); the tile
+                # renders it through fmtTime, which forces
+                # Asia/Ho_Chi_Minh — the user never sees a UTC time.
+                "archived_at": row["archived_at"],
             })
         return files
 
@@ -2417,7 +2422,8 @@ def _daily_summary_loop(app: App, interval: int = 60) -> None:
         try:
             maybe_scan_waiting_tasks(app)
         except Exception as err:  # the loop must survive anything
-            print(f"archive scan failed: {err}")
+            print(f"[{storage.format_ict_short(datetime.now(ICT))}] "
+                  f"archive scan failed: {err}")
         time.sleep(interval)
 
 
@@ -2450,7 +2456,8 @@ def maybe_scan_waiting_tasks(app: App, now=None) -> list:
     app.webdb.set_meta(ARCHIVE_SCAN_META_KEY,
                        now.isoformat(timespec="seconds"))
     if acted:
-        print(f"archive scan (48h): {', '.join(acted)}")
+        print(f"[{storage.format_ict_short(datetime.now(ICT))}] "
+              f"archive scan (48h): {', '.join(acted)}")
     return acted
 
 

@@ -1416,12 +1416,15 @@ async function renderDetail() {
 
 function fileTile(file) {
   // TD-0024: an archived file lives on Drive now — show its Drive
-  // link instead of a broken thumbnail.
+  // link instead of a broken thumbnail. TD-0024 correction (25/10):
+  // the tile also shows WHEN it was archived — fmtTime forces
+  // Asia/Ho_Chi_Minh, so the user reads Vietnam time, never UTC.
   if (file.archived) {
     const name = file.url
       ? `<a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name)}</a>`
       : esc(file.name);
-    return `<div class="file-tile"><div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">💾</div><div class="file-name">${name}<br><span class="muted">Đã lưu trữ trên Drive · ${fmtBytes(file.size)}</span></div></div>`;
+    const when = file.archived_at ? `lúc ${fmtTime(file.archived_at)} · ` : "";
+    return `<div class="file-tile"><div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">💾</div><div class="file-name">${name}<br><span class="muted">Đã lưu trữ trên Drive · ${when}${fmtBytes(file.size)}</span></div></div>`;
   }
   const isImage = (file.content_type || "").startsWith("image/");
   const isVideo = (file.content_type || "").startsWith("video/");
