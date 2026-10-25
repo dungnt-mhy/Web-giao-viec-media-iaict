@@ -116,15 +116,22 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(15,118,110,.18);b
 .meta-line{overflow-wrap:anywhere;margin:.18rem 0}
 .filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(140px,1fr));gap:.7rem;margin-bottom:.6rem}
 /* TD-0014: dải chip lọc nổi bật — nền teal nhạt riêng, chip đậm, viền
-   rõ, fade mép phải khi còn cuộn được (lớp has-more do JS bật/tắt). */
-.status-chips-wrap{position:relative;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:16px;padding:.45rem .5rem;margin-bottom:.6rem}
+   rõ, fade mép phải khi còn cuộn được (lớp has-more do JS bật/tắt).
+   TD-0023: nền dải đậm hẳn (#ccfbf1) để đọc ngay là một dải riêng;
+   chip thường viền đậm hơn, chip đang chọn dùng gradient teal đậm
+   (cùng họ với nút + Mẫu 1) + đổ bóng nhẹ — nhìn là biết đang chọn. */
+.status-chips-wrap{position:relative;background:#ccfbf1;border:1.5px solid #5eead4;border-radius:16px;padding:.45rem .5rem;margin-bottom:.6rem;box-shadow:0 2px 10px rgba(15,118,110,.10)}
 .status-chips{display:flex;gap:.45rem;overflow-x:auto;padding:.15rem .05rem .4rem;margin-bottom:0;scrollbar-width:none}
 .status-chips::-webkit-scrollbar{display:none}
-.status-chips-wrap.has-more::after{content:"";position:absolute;top:.45rem;bottom:.45rem;right:.5rem;width:2.25rem;background:linear-gradient(to right,transparent,#f0fdfa);pointer-events:none}
-.status-chip{flex:0 0 auto;border:1.5px solid #5eead4;background:#fff;color:#24423f;border-radius:999px;padding:.42rem .75rem;font-weight:800;font-size:.9rem;white-space:nowrap}
-.status-chip.active{background:var(--teal);border-color:var(--teal);color:#fff}
-.status-chip .chip-count{background:rgba(15,118,110,.12);border-radius:999px;padding:.05rem .45rem;font-size:.8rem;font-weight:800}
-.status-chip.active .chip-count{background:rgba(255,255,255,.25)}
+.status-chips-wrap.has-more::after{content:"";position:absolute;top:.45rem;bottom:.45rem;right:.5rem;width:2.25rem;background:linear-gradient(to right,transparent,#ccfbf1);pointer-events:none}
+.status-chip{flex:0 0 auto;border:1.5px solid #2dd4bf;background:#fff;color:#134e4a;border-radius:999px;padding:.42rem .75rem;font-weight:800;font-size:.9rem;white-space:nowrap}
+/* TD-0023: hover chỉ cho chip chưa chọn — hover mà đè gradient của
+   chip đang chọn thì chip đó mất dấu đang chọn lúc rê chuột. */
+.status-chip:not(.active):hover{background:#f0fdfa;border-color:var(--teal)}
+.status-chip:focus-visible{outline:3px solid rgba(13,148,136,.35);outline-offset:1px}
+.status-chip.active{background:linear-gradient(140deg,#0da678,#066e52);border-color:#066e52;color:#fff;box-shadow:0 2px 8px rgba(6,110,82,.35)}
+.status-chip .chip-count{background:rgba(15,118,110,.14);border-radius:999px;padding:.05rem .45rem;font-size:.8rem;font-weight:800}
+.status-chip.active .chip-count{background:rgba(255,255,255,.28)}
 .empty{padding:2rem 1rem;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:var(--radius);background:#fff}
 .toast{position:fixed;left:50%;bottom:92px;transform:translate(-50%,20px);background:#17202a;color:#fff;padding:.75rem 1rem;border-radius:12px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.22s;z-index:100;max-width:min(92vw,560px);text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -322,8 +329,12 @@ th{background:#f8fafc}
   .btn-soft{background:#134e4a;color:#99f6e4}
   .pill{background:#334155;color:#e2e8f0}
   .status-chip{background:#1e293b;color:#e2e8f0;border-color:#2dd4bf}
-  .status-chips-wrap{background:#134e4a;border-color:#334155}
-  .status-chips-wrap.has-more::after{background:linear-gradient(to right,transparent,#134e4a)}
+  .status-chip:not(.active):hover{background:#334155;border-color:#5eead4}
+  .status-chip:focus-visible{outline:3px solid rgba(94,234,212,.45);outline-offset:1px}
+  .status-chip .chip-count{background:rgba(94,234,212,.16)}
+  /* TD-0023: dải tối đậm hẳn (#115e59) để nổi trên nền tối; fade khớp màu dải. */
+  .status-chips-wrap{background:#115e59;border-color:#2dd4bf;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  .status-chips-wrap.has-more::after{background:linear-gradient(to right,transparent,#115e59)}
   .empty{background:#1e293b}
   .channel-chip{background:#334155;color:#e2e8f0}
   .file-tile{background:#1e293b}

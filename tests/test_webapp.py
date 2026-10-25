@@ -645,17 +645,17 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.9")
+        self.assertEqual(data["version"], "0.5.10")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.9", html)
+        self.assertIn("?v=0.5.10", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.9", js)
+        self.assertIn("0.5.10", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -710,6 +710,19 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("list-scroll", css)
         self.assertIn(".notification .row-main{overflow-wrap:anywhere}", css)
         self.assertIn(".notification .muted{overflow-wrap:anywhere}", css)
+        # TD-0023: dải chip đậm hẳn + chip sửa theo cho hợp (sáng/tối).
+        self.assertIn(".status-chips-wrap{position:relative;"
+                      "background:#ccfbf1;border:1.5px solid #5eead4", css)
+        self.assertIn("linear-gradient(to right,transparent,#ccfbf1)", css)
+        self.assertIn(".status-chip.active{background:linear-gradient("
+                      "140deg,#0da678,#066e52)", css)
+        self.assertIn(".status-chip:not(.active):hover{background:#f0fdfa",
+                      css)
+        self.assertIn(".status-chip:focus-visible{outline:3px solid "
+                      "rgba(13,148,136,.35)", css)
+        self.assertIn(".status-chips-wrap{background:#115e59;"
+                      "border-color:#2dd4bf", css)
+        self.assertIn("linear-gradient(to right,transparent,#115e59)", css)
         # TD-0018: modal không cache lỗi/rỗng, đồng bộ sống, Brave.
         self.assertIn("Không tải được danh sách nơi đăng", js)
         self.assertIn("data-retry", js)
@@ -723,8 +736,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v17", raw)
-        self.assertIn(b"app.js?v=0.5.9", raw)
+        self.assertIn(b"giao-viec-iaict-v18", raw)
+        self.assertIn(b"app.js?v=0.5.10", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)

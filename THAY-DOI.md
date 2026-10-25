@@ -721,6 +721,35 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0023 — Hàng chip lọc trạng thái: nền nổi hơn, nút chip sửa theo cho hợp (bản 0.5.10)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án (kèm ảnh chụp hàng
+  chip "Tất cả 16 / Nháp 4 / Chờ…": "Xử lý chỗ này để có background
+  nổi hơn; các Button cũng phải sửa theo cho hợp").
+- Hiện trạng trước khi sửa (TD-0014): `.status-chips-wrap` nền
+  #f0fdfa rất nhạt, viền #ccfbf1; chip thường nền trắng, viền
+  #5eead4; chip đang chọn `background:var(--teal)` + chữ trắng.
+  Ảnh người dùng gửi cho thấy chip đang chọn vẫn nhạt/trắng — cần
+  kiểm chứng khi làm xem style đang chọn có thực sự áp dụng không
+  (màu tính toán của chip đang chọn), nếu không áp dụng thì sửa
+  tận nguyên nhân chứ không chỉ tô lại màu.
+- Nội dung thay đổi: nền dải chip đậm và rõ ranh giới hơn (đọc
+  được ngay là một dải riêng trên mobile); nút chip sửa theo cho
+  hợp — chip thường rõ viền/nền/độ tương phản hơn, chip đang chọn
+  khác biệt không thể nhầm (nền teal đậm + chữ trắng + pill đếm
+  đọc được), trạng thái hover/focus nhất quán; giữ cuộn ngang +
+  fade mép phải (gradient fade phải khớp nền dải mới). Giữ nguyên
+  hành vi lọc, đếm, JS fade và mẫu pager của TD-0022. Sáng + tối
+  đều phải chuẩn.
+- Ảnh hưởng: chỉ CSS hàng chip (và markup chip nếu cần). Bản
+  0.5.9 → 0.5.10 (VERSION, APP_VERSION, ?v=0.5.10, SW cache
+  v17→v18). Kiểm thử: webapp + bot phải xanh, thêm test cho dấu
+  vết mới; probe Playwright mobile 390 + desktop 1440 (sáng +
+  tối): chụp hàng chip, chip đang chọn khác biệt rõ, không tràn
+  ngang.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).
