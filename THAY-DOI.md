@@ -689,6 +689,38 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0022 — Mọi danh sách liên quan đến việc đều có scroll, "Xem thêm" và "Thu gọn" (bản 0.5.9)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án ("Tất cả các danh
+  sách liên quan đến việc đều cho scroll, xem thêm và thu gọn").
+- Hiện trạng trước khi sửa: toggle ẩn/hiện cả mục (▾ Thu gọn /
+  ▸ Mở rộng, lưu localStorage) đã có ở Việc/Chờ duyệt/Lịch đăng
+  (TD-0014); scroll vùng riêng đã có ở #taskList/.list-scroll
+  (desktop) và khối Hoạt động ở Tổng quan (.activity-scroll);
+  CHƯA có "Xem thêm" ở bất kỳ danh sách nào; "Việc gần đây" ở Tổng
+  quan cắt cứng 6 mục, không scroll/không thu gọn; màn Thông báo vẽ
+  toàn bộ mục trong `.list` thường, không scroll/không thu gọn;
+  thẻ kênh ở Chi tiết việc cần rà soát.
+- Nội dung thay đổi: mẫu thống nhất cho mọi danh sách liên quan
+  đến việc — (a) vùng scroll riêng (desktop: max-height +
+  overflow-y auto theo mẫu .list-scroll; mobile: cuộn trang tự
+  nhiên, không tràn ngang); (b) "Xem thêm" hiện thêm theo đợt
+  trên dữ liệu đã tải về (mặc định 10 mục ở danh sách chính, 6 mục
+  ở khối Tổng quan; hết mục thì ẩn nút); (c) "Thu gọn" thu lại về
+  số mục mặc định khi đã mở rộng. Giữ nguyên toggle ẩn/hiện cả mục
+  của TD-0014. Phạm vi: Việc, Chờ duyệt, Lịch đăng, Việc gần đây +
+  Hoạt động (Tổng quan), Thông báo, thẻ kênh ở Chi tiết việc (đánh
+  giá; nếu ít mục thì ghi rõ lý do không áp dụng). Không đổi danh
+  sách Tài khoản (không liên quan đến việc).
+- Ảnh hưởng: chỉ giao diện danh sách, không đổi API hay logic
+  lọc/duyệt/đăng. Bản 0.5.8 → 0.5.9 (VERSION, APP_VERSION, ?v=0.5.9,
+  SW cache v16→v17). Kiểm thử: webapp + bot phải xanh, thêm test
+  cho mẫu mới; probe Playwright mobile 390 + desktop 1440
+  (sáng + tối): nút Xem thêm/Thu gọn hoạt động, đếm đúng số mục,
+  không tràn ngang, scroll vùng riêng trên desktop.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

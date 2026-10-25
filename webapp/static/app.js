@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.8";
+const APP_VERSION = "0.5.9";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -615,6 +615,41 @@ function setupListToggle(btn, body, key) {
   paint();
 }
 
+/* TD-0022: phân trang phía client — MỘT helper dùng chung cho mọi danh
+   sách việc. Dữ liệu đã tải về hết (không gọi thêm API); chỉ hiện
+   `pageSize` mục đầu, "Xem thêm" hiện thêm một đợt, "Thu gọn" thu lại
+   về đợt đầu. Vẽ lại (đổi lọc, tải lại, chuyển màn) thì reset về đợt
+   đầu — trạng thái chỉ giữ trong phiên, không lưu localStorage.
+   Khác với toggle ▾ Thu gọn / ▸ Mở rộng của TD-0014 (ẩn/hiện CẢ mục):
+   nút "Thu gọn" ở đây nằm ở CHÂN danh sách, cạnh dòng đếm
+   "Đang hiện X/Y", và chỉ thu số mục hiện ra. */
+function setupListPager({ listEl, footerEl, items, pageSize = 10, render, afterRender, emptyHtml = "", countEl = null, countText = null }) {
+  if (!listEl) return { reset() {} };
+  let shown = pageSize;
+  const paint = () => {
+    const visible = items.slice(0, shown);
+    listEl.innerHTML = visible.length ? render(visible) : emptyHtml;
+    if (afterRender) afterRender(listEl, visible);
+    const total = items.length;
+    if (countEl) countEl.textContent = countText ? countText(Math.min(shown, total), total) : "";
+    if (!footerEl) return;
+    if (!total) { footerEl.innerHTML = ""; return; }
+    const remaining = total - shown;
+    footerEl.innerHTML = `
+      <div class="pager-foot">
+        <span class="muted small pager-count">Đang hiện ${Math.min(shown, total)}/${total}</span>
+        ${remaining > 0 ? `<button type="button" class="btn btn-small" data-pager-more>Xem thêm (còn ${remaining})</button>` : ""}
+        ${shown > pageSize ? `<button type="button" class="btn btn-small" data-pager-less title="Chỉ hiện ${pageSize} mục đầu">Thu gọn</button>` : ""}
+      </div>`;
+    const more = footerEl.querySelector("[data-pager-more]");
+    if (more) more.addEventListener("click", () => { shown += pageSize; paint(); });
+    const less = footerEl.querySelector("[data-pager-less]");
+    if (less) less.addEventListener("click", () => { shown = pageSize; paint(); });
+  };
+  paint();
+  return { reset() { shown = pageSize; paint(); } };
+}
+
 /* TD-0014: fade mép phải của dải chip khi còn cuộn ngang được. */
 function updateChipsFade() {
   const wrap = document.getElementById("statusChipsWrap");
@@ -749,17 +784,33 @@ async function renderDashboard() {
     <div class="grid grid-2" style="margin-top:1rem">
       <section class="card">
         <div class="row-item"><h3>🕘 Việc gần đây</h3><button class="btn btn-small" data-go="tasks">Xem tất cả</button></div>
-        <div class="list">${tasks.items.slice(0, 6).map(taskRow).join("") || `<p class="muted">Chưa có việc nào.</p>`}</div>
+        <div class="list list-scroll" id="dashRecent"></div>
+        <div id="dashRecentPager"></div>
       </section>
       <section class="card">
         <div class="row-item"><h3>🔔 Hoạt động liên quan tới bạn</h3><button class="btn btn-small" data-go="notifications">Mở hộp thông báo</button></div>
-        <div class="list activity-scroll">${notifications.items.slice(0, 6).map(notificationRow).join("") || `<p class="muted">Chưa có thông báo nào.</p>`}</div>
+        <div class="list activity-scroll" id="dashActivity"></div>
+        <div id="dashActivityPager"></div>
       </section>
     </div>`;
   $("#dashCreate").addEventListener("click", () => navigate("create"));
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => navigate(b.dataset.go)));
-  bindTaskCards();
-  bindNotificationRows();
+  // TD-0022: hai khối Tổng quan phân trang 6 mục/đợt (bằng mức cắt cũ
+  // slice(0, 6)), "Việc gần đây" có thêm vùng cuộn riêng trên desktop.
+  setupListPager({
+    listEl: $("#dashRecent"), footerEl: $("#dashRecentPager"),
+    items: tasks.items, pageSize: 6,
+    render: (vis) => vis.map(taskRow).join(""),
+    afterRender: (el) => bindTaskCards(el),
+    emptyHtml: `<p class="muted">Chưa có việc nào.</p>`,
+  });
+  setupListPager({
+    listEl: $("#dashActivity"), footerEl: $("#dashActivityPager"),
+    items: notifications.items, pageSize: 6,
+    render: (vis) => vis.map(notificationRow).join(""),
+    afterRender: (el) => bindNotificationRows(el),
+    emptyHtml: `<p class="muted">Chưa có thông báo nào.</p>`,
+  });
 }
 
 function taskRow(task) {
@@ -811,9 +862,9 @@ async function renderTasks() {
     </details>
     <div class="status-chips-wrap" id="statusChipsWrap"><div class="status-chips" id="statusChips" aria-label="Lọc theo trạng thái"></div></div>
     <div class="list-head"><span class="list-title">📋 Danh sách việc <span class="list-count" id="taskListCount"></span></span><button type="button" class="btn btn-small" id="taskListToggle">▾ Thu gọn</button></div>
-    <div id="taskList" class="list list-scroll"><div class="loading">⏳ Đang tải…</div></div>`;
+    <div id="taskListWrap"><div id="taskList" class="list list-scroll"><div class="loading">⏳ Đang tải…</div></div><div id="taskListPager"></div></div>`;
   $("#tasksCreate").addEventListener("click", () => navigate("create"));
-  setupListToggle($("#taskListToggle"), $("#taskList"), "gv-tasklist-collapsed");
+  setupListToggle($("#taskListToggle"), $("#taskListWrap"), "gv-tasklist-collapsed");
   $("#statusChips").addEventListener("scroll", updateChipsFade, { passive: true });
   let lastCounts = null;
   const paintChips = () => {
@@ -848,14 +899,19 @@ async function renderTasks() {
     const data = await api(`/api/tasks?${params}`);
     lastCounts = data.counts || null;
     paintChips();
-    $("#taskList").innerHTML = data.items.length
-      ? data.items.map(taskRow).join("")
-      : `<div class="empty">${state.taskStatus
-          ? "Không có việc nào ở trạng thái này."
-          : "Không tìm thấy việc nào khớp bộ lọc."}</div>`;
-    bindTaskCards($("#taskList"));
-    const countEl = $("#taskListCount");
-    if (countEl) countEl.textContent = data.items.length ? `· ${data.items.length} việc` : "";
+    // TD-0022: phân trang 10 mục/đợt trên dữ liệu đã tải; đổi lọc thì
+    // vẽ lại từ đợt đầu (pager mới mỗi lần load).
+    setupListPager({
+      listEl: $("#taskList"), footerEl: $("#taskListPager"),
+      items: data.items, pageSize: 10,
+      render: (vis) => vis.map(taskRow).join(""),
+      afterRender: (el) => bindTaskCards(el),
+      emptyHtml: `<div class="empty">${state.taskStatus
+        ? "Không có việc nào ở trạng thái này."
+        : "Không tìm thấy việc nào khớp bộ lọc."}</div>`,
+      countEl: $("#taskListCount"),
+      countText: (s, t) => s >= t ? `· ${t} việc` : `· Đang hiện ${s}/${t} việc`,
+    });
   };
   paintChips();
   $("#taskFilters").addEventListener("input", () => load().catch((e) => toast(e.message, true)));
@@ -1196,7 +1252,7 @@ async function renderDetail() {
       </div>
     </details>
     <h3 style="margin:1.2rem 0 .7rem">Thẻ kênh (${outputs.length})</h3>
-    <div class="list">${outputs.map((o) => outputCard(o, task)).join("") || `<div class="empty">Việc này chưa có thẻ kênh.</div>`}</div>`;
+    <div class="list list-scroll">${outputs.map((o) => outputCard(o, task)).join("") || `<div class="empty">Việc này chưa có thẻ kênh.</div>`}</div>`;
   $("#backTasks").addEventListener("click", () => navigate("tasks"));
   const addForm = $("#addFilesForm");
   if (addForm) addForm.addEventListener("submit", async (event) => {
@@ -1223,8 +1279,10 @@ function fileTile(file) {
     : `<div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">📄</div>`;
   return `<div class="file-tile">${media}<div class="file-name"><a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name)}</a><br><span class="muted">${fmtBytes(file.size)}</span></div></div>`;
 }
-function bindOutputActions(reload) {
-  $$("[data-output-action]").forEach((btn) => {
+function bindOutputActions(reload, root = document) {
+  // TD-0022: root để pager phân trang gắn lại nút chỉ trong danh sách
+  // vừa vẽ lại, không gắn trùng nút ở nơi khác trên màn hình.
+  $$("[data-output-action]", root).forEach((btn) => {
     if (!btn.dataset.outputAction) return;
     btn.addEventListener("click", () =>
       handleOutputAction(Number(btn.dataset.outputId), btn.dataset.outputAction, reload));
@@ -1414,22 +1472,34 @@ async function renderReview() {
   const data = await api("/api/review-queue");
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>⏳ Chờ duyệt</h2><p>${data.items.length} thẻ kênh đang chờ người duyệt xử lý.</p></div></div>
-    <div class="list-head"><span class="list-title">⏳ Thẻ kênh chờ duyệt <span class="list-count">${data.items.length ? `· ${data.items.length} thẻ` : ""}</span></span><button type="button" class="btn btn-small" id="reviewListToggle">▾ Thu gọn</button></div>
-    <div class="list list-scroll" id="reviewList">${data.items.map((o) => outputCard(o, {
-      code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
-      hint: o.task_hint || "",
-    })).join("") || `<div class="empty">🎉 Không có thẻ kênh nào đang chờ duyệt.</div>`}</div>`;
-  setupListToggle($("#reviewListToggle"), $("#reviewList"), "gv-review-collapsed");
-  // Clicking a queue card (outside its buttons) opens the task.
-  $$("[data-task]").forEach(() => {});
-  $$(".channel-card").forEach((card, i) => {
-    card.style.cursor = "pointer";
-    card.addEventListener("click", (event) => {
-      if (event.target.closest("button,a,video,summary")) return;
-      navigate("detail", data.items[i].task_code);
-    });
+    <div class="list-head"><span class="list-title">⏳ Thẻ kênh chờ duyệt <span class="list-count" id="reviewListCount"></span></span><button type="button" class="btn btn-small" id="reviewListToggle">▾ Thu gọn</button></div>
+    <div id="reviewListWrap"><div class="list list-scroll" id="reviewList"></div><div id="reviewListPager"></div></div>`;
+  setupListToggle($("#reviewListToggle"), $("#reviewListWrap"), "gv-review-collapsed");
+  // TD-0022: phân trang 10 thẻ/đợt. Clicking a queue card (outside its
+  // buttons) opens the task — visible là tiền tố của data.items nên
+  // chỉ số i vẫn khớp.
+  const reviewCard = (o) => outputCard(o, {
+    code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
+    hint: o.task_hint || "",
   });
-  bindOutputActions(() => renderReview());
+  setupListPager({
+    listEl: $("#reviewList"), footerEl: $("#reviewListPager"),
+    items: data.items, pageSize: 10,
+    render: (vis) => vis.map(reviewCard).join(""),
+    afterRender: (el, vis) => {
+      $$(".channel-card", el).forEach((card, i) => {
+        card.style.cursor = "pointer";
+        card.addEventListener("click", (event) => {
+          if (event.target.closest("button,a,video,summary")) return;
+          navigate("detail", vis[i].task_code);
+        });
+      });
+      bindOutputActions(() => renderReview(), el);
+    },
+    emptyHtml: `<div class="empty">🎉 Không có thẻ kênh nào đang chờ duyệt.</div>`,
+    countEl: $("#reviewListCount"),
+    countText: (s, t) => s >= t ? (t ? `· ${t} thẻ` : "") : `· Đang hiện ${s}/${t} thẻ`,
+  });
 }
 
 /* ============================= schedule ============================= */
@@ -1438,20 +1508,32 @@ async function renderSchedule() {
   const data = await api("/api/scheduled");
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>🕐 Lịch đăng</h2><p>Tất cả bài đang đặt lịch, xếp theo giờ tăng dần.</p></div></div>
-    <div class="list-head"><span class="list-title">🕐 Bài đặt lịch <span class="list-count">${data.items.length ? `· ${data.items.length} bài` : ""}</span></span><button type="button" class="btn btn-small" id="scheduleListToggle">▾ Thu gọn</button></div>
-    <div class="list list-scroll" id="scheduleList">${data.items.map((o) => outputCard(o, {
-      code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
-      hint: o.task_hint || "",
-    })).join("") || `<div class="empty">Chưa có bài nào đang đặt lịch.</div>`}</div>`;
-  setupListToggle($("#scheduleListToggle"), $("#scheduleList"), "gv-schedule-collapsed");
-  $$(".channel-card").forEach((card, i) => {
-    card.style.cursor = "pointer";
-    card.addEventListener("click", (event) => {
-      if (event.target.closest("button,a,video,summary")) return;
-      navigate("detail", data.items[i].task_code);
-    });
+    <div class="list-head"><span class="list-title">🕐 Bài đặt lịch <span class="list-count" id="scheduleListCount"></span></span><button type="button" class="btn btn-small" id="scheduleListToggle">▾ Thu gọn</button></div>
+    <div id="scheduleListWrap"><div class="list list-scroll" id="scheduleList"></div><div id="scheduleListPager"></div></div>`;
+  setupListToggle($("#scheduleListToggle"), $("#scheduleListWrap"), "gv-schedule-collapsed");
+  // TD-0022: phân trang 10 bài/đợt (giống Chờ duyệt).
+  const schedCard = (o) => outputCard(o, {
+    code: o.task_code, creator_id: o.creator_id, creator_name: o.creator_name,
+    hint: o.task_hint || "",
   });
-  bindOutputActions(() => renderSchedule());
+  setupListPager({
+    listEl: $("#scheduleList"), footerEl: $("#scheduleListPager"),
+    items: data.items, pageSize: 10,
+    render: (vis) => vis.map(schedCard).join(""),
+    afterRender: (el, vis) => {
+      $$(".channel-card", el).forEach((card, i) => {
+        card.style.cursor = "pointer";
+        card.addEventListener("click", (event) => {
+          if (event.target.closest("button,a,video,summary")) return;
+          navigate("detail", vis[i].task_code);
+        });
+      });
+      bindOutputActions(() => renderSchedule(), el);
+    },
+    emptyHtml: `<div class="empty">Chưa có bài nào đang đặt lịch.</div>`,
+    countEl: $("#scheduleListCount"),
+    countText: (s, t) => s >= t ? (t ? `· ${t} bài` : "") : `· Đang hiện ${s}/${t} bài`,
+  });
 }
 
 /* ============================== stats ============================== */
@@ -1782,25 +1864,28 @@ async function renderNotifications() {
   const data = await api("/api/notifications");
   updateBadges(data.unread);
   /* TD-0011: gộp thông báo theo ngày — nhóm mới nhất mở sẵn,
-     các nhóm cũ bấm mới mở. */
-  const groups = new Map();
-  for (const item of data.items) {
-    const d = new Date(item.created_at);
-    const day = Number.isNaN(d.getTime()) ? "Không rõ ngày"
-      : new Intl.DateTimeFormat("vi-VN", {
-          timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric",
-        }).format(d);
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(item);
-  }
-  const groupHtml = [...groups.entries()].map(([day, items], gi) => {
-    const unreadCount = items.filter((i) => !i.read).length;
-    return `
-    <details class="day-group" ${gi === 0 ? "open" : ""}>
-      <summary>📅 ${esc(day)} · ${items.length} thông báo${unreadCount ? ` · <span class="pill warn">${unreadCount} chưa đọc</span>` : ""}</summary>
-      <div class="list" style="margin-top:.6rem">${items.map(notificationRow).join("")}</div>
-    </details>`;
-  }).join("");
+     các nhóm cũ bấm mới mở. TD-0022: gộp trên các mục ĐANG HIỆN
+     (phân trang 10 mục/đợt) để không vỡ nhóm khi bấm Xem thêm. */
+  const groupHtmlFor = (visible) => {
+    const groups = new Map();
+    for (const item of visible) {
+      const d = new Date(item.created_at);
+      const day = Number.isNaN(d.getTime()) ? "Không rõ ngày"
+        : new Intl.DateTimeFormat("vi-VN", {
+            timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric",
+          }).format(d);
+      if (!groups.has(day)) groups.set(day, []);
+      groups.get(day).push(item);
+    }
+    return [...groups.entries()].map(([day, items], gi) => {
+      const unreadCount = items.filter((i) => !i.read).length;
+      return `
+      <details class="day-group" ${gi === 0 ? "open" : ""}>
+        <summary>📅 ${esc(day)} · ${items.length} thông báo${unreadCount ? ` · <span class="pill warn">${unreadCount} chưa đọc</span>` : ""}</summary>
+        <div class="list" style="margin-top:.6rem">${items.map(notificationRow).join("")}</div>
+      </details>`;
+    }).join("");
+  };
   $("#screen").innerHTML = `
     <div class="page-head"><div><h2>🔔 Thông báo</h2><p>${data.unread} thông báo chưa đọc.</p>
       <p class="muted small">Phiên bản ${APP_VERSION}</p></div>
@@ -1815,12 +1900,20 @@ async function renderNotifications() {
       </div>
       <p class="muted small">Thông báo đẩy và badge là theo từng trình duyệt / app đã ghim — cần bật riêng một lần ở mỗi nơi. App ghim bằng Brave là lối tắt (icon có logo Brave), không phải app cài đặt: trên Android, badge số không hiện được, chỉ có chấm thông báo khi còn thông báo chưa đọc. Muốn nhận push khi đóng app, hãy bật thông báo trong Brave; muốn có app thật thì cài bằng Chrome.</p>
     </section>
-    ${groupHtml || `<div class="empty">Chưa có thông báo nào.</div>`}`;
+    <div class="list list-scroll" id="notifList"></div>
+    <div id="notifPager"></div>`;
   $("#markAll").addEventListener("click", async () => {
     await apiJson("/api/notifications/read", "POST", { all: true });
     renderNotifications();
   });
-  bindNotificationRows();
+  // TD-0022: phân trang 10 thông báo/đợt + vùng cuộn riêng trên desktop.
+  setupListPager({
+    listEl: $("#notifList"), footerEl: $("#notifPager"),
+    items: data.items, pageSize: 10,
+    render: (vis) => groupHtmlFor(vis),
+    afterRender: (el) => bindNotificationRows(el),
+    emptyHtml: `<div class="empty">Chưa có thông báo nào.</div>`,
+  });
   initPushPanel().catch((err) => {
     const box = $("#pushState");
     if (box) box.textContent = `⚠️ Không khởi tạo được mục thông báo đẩy: ${err.message}`;

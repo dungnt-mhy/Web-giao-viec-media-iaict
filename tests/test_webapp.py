@@ -645,17 +645,17 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.8")
+        self.assertEqual(data["version"], "0.5.9")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.8", html)
+        self.assertIn("?v=0.5.9", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.8", js)
+        self.assertIn("0.5.9", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -723,11 +723,37 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v16", raw)
-        self.assertIn(b"app.js?v=0.5.8", raw)
+        self.assertIn(b"giao-viec-iaict-v17", raw)
+        self.assertIn(b"app.js?v=0.5.9", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
+
+    def test_td22_list_pager_markers(self):
+        # TD-0022: MỘT helper phân trang dùng chung cho mọi danh sách
+        # việc — scroll + "Xem thêm" + "Thu gọn", đếm "Đang hiện X/Y".
+        # Toggle ẩn/hiện cả mục của TD-0014 giữ nguyên, không thay.
+        admin = self.login("admin")
+        status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
+        js = raw.decode("utf-8")
+        self.assertIn("function setupListPager", js)
+        self.assertIn("data-pager-more", js)
+        self.assertIn("data-pager-less", js)
+        self.assertIn("Xem thêm (còn ", js)
+        self.assertIn("Đang hiện ", js)
+        self.assertIn("Chỉ hiện ", js)
+        # Mọi danh sách việc đều nối helper (đủ 6 chân pager).
+        for marker in ("taskListPager", "reviewListPager",
+                       "scheduleListPager", "dashRecentPager",
+                       "dashActivityPager", "notifPager"):
+            self.assertIn(marker, js)
+        # Chi tiết việc chỉ thêm vùng cuộn (thẻ kênh tối đa 5, pager
+        # không bao giờ kích hoạt nên không ép thêm).
+        self.assertIn('class="list list-scroll"', js)
+        status, raw, _ = self.req_bytes("GET", "/styles.css", token=admin)
+        css = raw.decode("utf-8")
+        self.assertIn(".pager-foot", css)
+        self.assertIn(".pager-foot .pager-count", css)
         # TD-0019: mục "Đã duyệt · chờ đăng" (bản 0.5.6) — lối tắt
         # tới màn Việc lọc sẵn APPROVED_WAITING, chỉ cho người duyệt,
         # có huy hiệu đếm việc chờ đăng.

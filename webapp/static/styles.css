@@ -105,6 +105,11 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(15,118,110,.18);b
 @media (min-width:821px){
   .list-scroll{max-height:calc(100dvh - 240px);overflow-y:auto;padding-right:.25rem}
 }
+/* TD-0022: chân phân trang danh sách — dòng đếm "Đang hiện X/Y" +
+   nút Xem thêm / Thu gọn. Nằm NGOÀI vùng cuộn (.list-scroll) để
+   luôn thấy được; co hàng trên mobile, không tràn ngang. */
+.pager-foot{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin-top:.6rem}
+.pager-foot .pager-count{margin-right:auto}
 .row-item{display:flex;gap:.8rem;align-items:flex-start;justify-content:space-between}
 .row-main{min-width:0;flex:1}
 .row-main strong{overflow-wrap:anywhere}
