@@ -7,12 +7,12 @@
    Other static assets (icons, manifest) stay cache-first.
    skipWaiting + clients.claim make a new worker take over at once;
    app.js reloads the page once when control changes hands. */
-const CACHE = "giao-viec-iaict-v18";
+const CACHE = "giao-viec-iaict-v19";
 /* index.html references the shell assets with a ?v=<release> query:
    Cloudflare's edge once kept serving a stale /app.js under its
    plain URL (default TTL) even after the origin had the new file. */
 const SHELL = [
-  "/", "/index.html", "/app.js?v=0.5.10", "/styles.css?v=0.5.10",
+  "/", "/index.html", "/app.js?v=0.5.11", "/styles.css?v=0.5.11",
   "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png",
 ];
 const SHELL_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css"]);

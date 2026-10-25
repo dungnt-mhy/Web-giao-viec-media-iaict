@@ -23,7 +23,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 - Nguồn: Người dùng yêu cầu / Muse đề xuất được duyệt / Phát sinh khi xây GĐ…
 - Nội dung thay đổi: <trước đây …, nay …>
 - Ảnh hưởng: mục SRS liên quan (vd 3.4), phạm vi giai đoạn, dữ liệu/API…
-- Trạng thái SRS: ⏳ Chờ cập nhật | ✅ Đã vào SRS x.y
+- Trạng thái SRS: ⏳ Chờ cập nhật
 ```
 
 ---
@@ -747,6 +747,164 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   tối): chụp hàng chip, chip đang chọn khác biệt rõ, không tràn
   ngang.
 - Trạng thái SRS: ✅ SRS 1.5
+
+---
+
+### TD-0024 — Tải video lớn chia nhỏ + lưu trữ bản gốc lên Google Drive + xóa sau khi đăng thành công (bản 0.5.11)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án. Xuất phát từ câu
+  hỏi "tải video nặng cả 1GB lên thì sao?": hiện tại file 1GB không
+  tải lên được (wizard chặn >200MB ngay trong trình duyệt; mục Thêm
+  tư liệu không có bước chặn nên trình duyệt tải lên rồi bị Cloudflare
+  cắt ở 100MB với lỗi 413 — Cloudflare gói Free/Pro giới hạn mỗi lần
+  gửi 100MB, Business 200MB, Enterprise tối đa 5GB; máy chủ giới hạn
+  mỗi file 200MB và mỗi lần gửi tối đa 1GB). Cloudflare Tunnel không
+  tính tiền theo dung lượng (băng thông unmetered), nên tải nhiều
+  không phát sinh hóa đơn Cloudflare; chi phí thật là thời gian tải,
+  data điện thoại và ổ đĩa máy chủ (còn trống 98GB).
+- Quyết định của chủ dự án (25/10, đính chính lần 2 cùng ngày): (a)
+  **đăng thành công thì xóa file của bài đó khỏi máy chủ, bài nào cũng
+  vậy** — không chỉ video 1GB; (b) **lưu trữ lên Google Drive của chủ
+  dự án** ("lưu tẹt bô") trước khi xóa, để sau này cần thì lấy lại từ
+  đó được. Điểm kỹ thuật bắt buộc: file của một việc dùng chung cho
+  nhiều kênh (cùng ảnh cho Facebook + Instagram) nên chỉ xóa khi TẤT
+  CẢ đầu ra của việc đó đều đã đăng thành công; xóa theo từng đầu ra
+  riêng lẻ sẽ làm kênh còn lại mất file để đăng.
+- Phương án thay thế chủ dự án nêu (25/10, chưa chọn): tải lên thẳng
+  Google Drive, máy chủ lấy data từ đó. Khuyến nghị KHÔNG chọn vì:
+  máy chủ vẫn cần bản local để dựng video bằng ffmpeg, đăng Facebook,
+  hiện ảnh thu nhỏ — nghĩa là mỗi lần dùng lại phải tải file từ Drive
+  về (chậm qua proxy, phụ thuộc Google API + token OAuth), và việc tải
+  từ điện thoại lên thẳng Drive cũng không nhanh hơn hay nhẹ data hơn;
+  connector Drive hiện chỉ có upload từ file local trên máy chủ
+  (`hatch_gws_cli drive +upload`), chưa có luồng tạo resumable session
+  cho trình duyệt tải thẳng.
+- Quyết định cuối (25/10 13:20): chọn CÁCH A — tải lên máy chủ, đăng
+  xong thì lưu Drive rồi xóa. Google Drive đã nối xong cùng ngày
+  (trước khi chọn). Giới hạn mỗi file chốt 2GB cho đường tải chia nhỏ.
+- Nội dung thay đổi: (a) tải lên chia nhỏ có tiếp tục được (chunked/
+  resumable): trình duyệt cắt file thành miếng ~50MB (dưới ngưỡng
+  100MB của Cloudflare và dưới timeout 100 giây mỗi miếng), gửi lần
+  lượt, máy chủ ráp lại thành file hoàn chỉnh bằng cách ghi nối ra
+  đĩa (không giữ cả file trong RAM), rớt mạng thì tiếp tục từ miếng
+  dở dang; nâng giới hạn mỗi file của máy chủ lên 2GB (đã chốt),
+  giữ nguyên giới hạn 1GB cho lần gửi đơn không chia nhỏ; bổ sung
+  bước kiểm tra kích thước + thông báo còn thiếu ở mục Thêm tư liệu;
+  (b) khi TẤT CẢ đầu ra của một việc đều đã đăng thành công: tải toàn
+  bộ file tư liệu của việc đó lên Google Drive của chủ dự án (thư mục
+  riêng, chốt khi làm; triển khai bằng `hatch_gws_cli drive +upload`
+  từ máy chủ) rồi mới xóa các file đó khỏi máy chủ; (c) bản xem trước/
+  bản nháp luôn dùng bản đã nén bằng ffmpeg (vài chục MB), không bao
+  giờ phát bản gốc 1GB (bản gốc >512MB không được Cloudflare cache
+  nên mỗi lần xem lại kéo đủ 1GB qua tunnel). Mở: việc không bao giờ
+  đăng (hủy/bỏ dở) cần quy tắc dọn riêng (vd xóa khi hủy việc, hoặc
+  sau N ngày không hoạt động) — chờ chủ dự án chốt.
+- Quy tắc bổ sung (25/10, gộp vào TD-0024): (d) việc nằm quá lâu ở
+  trạng thái chờ duyệt (PENDING) hoặc chờ đăng (APPROVED_WAITING) —
+  quá 48h kể từ khi đầu ra rơi vào trạng thái đó — thì đẩy toàn bộ
+  file tư liệu của việc lên Google Drive (cùng thư mục lưu trữ) rồi
+  xóa khỏi máy chủ; bản thân việc và trạng thái giữ nguyên, chỉ file
+  chuyển chỗ. Không lưu trữ khi đang có lệnh đăng dở dang
+  (publish_requested chưa hoàn tất). Ghi audit cho lần lưu trữ này.
+  (e) khôi phục: khi cần dùng lại file đã lưu trữ thì tải lại từ
+  Drive về máy chủ — nút "↩️ Tải lại từ Drive" ở Chi tiết việc khi
+  file đang lưu trữ, và tự động tải lại khi bấm Đăng/Đặt lịch mà file
+  chưa có trên máy chủ. (f) giới hạn tổng: toàn bộ file tư liệu trên
+  máy chủ (kể cả thư mục tạm của tải chia nhỏ) không quá 9GB — đường
+  tải lên từ chối file mới khi tổng dung lượng sẽ vượt 9GB (thông báo
+  rõ lý do), và màn Thống kê hiển thị mức đã dùng (X/9GB). Cơ chế quét
+  48h chạy nền định kỳ (tái dùng cơ chế job có sẵn của webapp, ví dụ
+  luồng tổng kết 20:00).
+- Điều kiện tiên quyết: Google Drive phải được nối thì mới xây/kiểm
+  chứng được chân lưu trữ Drive; chân tải chia nhỏ không cần Drive.
+  Đã nối xong 25/10 (trước khi chọn cách A).
+- Ảnh hưởng: webapp (API tải chia nhỏ + hook sau khi đăng + dọn file)
+  và bot (botctl/luồng đăng video — chỉ nếu hook chạm tới; ghi rõ khi
+  làm). Bản 0.5.10 → 0.5.11 (VERSION, APP_VERSION, ?v=0.5.11, SW cache
+  v18→v19). Kiểm thử: webapp + bot phải xanh, thêm test cho tải chia
+  nhỏ (ghép đủ/thiếu miếng, tiếp tục sau rớt, từ chối miếng quá lớn)
+  và cho quy tắc lưu trữ/xóa; probe Playwright + kiểm chứng thật với
+  file lớn (vd 300MB) qua đường công khai.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+- Kết quả (25/10, ĐÃ XONG — bản 0.5.11): (a) API tải chia nhỏ
+  `POST /api/uploads/chunked/init|chunk|complete|status`, `DELETE`
+  hủy phiên; miếng 50MB, ngưỡng dùng đường chia nhỏ >20MB, file nhỏ
+  giữ đường đơn cũ; giới hạn ráp xong 2GB/file, đường đơn giữ 1GB;
+  miếng tạm ở `data/files/.tmp/<upload_id>/`, dọn phiên dở >24h khi
+  init mới; resume qua `upload_id` lưu localStorage + `GET status`
+  (server tính lại danh sách miếng đã nhận từ file `.part` — chuẩn
+  hơn meta.json); retry mỗi miếng tối đa 3 lần, thanh tiến trình theo
+  từng file ở wizard và Thêm tư liệu; wizard chặn >2GB, Thêm tư liệu
+  đã có bước chặn + thông báo rõ. (b) Lưu trữ/xóa: hook ở cả hai
+  đường lật PUBLISHED trong `botctl set-output-published` (theo nơi
+  đăng và không theo nơi); khi TẤT CẢ đầu ra (trừ đã hủy) đều
+  PUBLISHED thì worker nền tách riêng (`archive_worker.py`, tách
+  session, log `data/archive.log`) tải từng file lên Drive rồi mới
+  xóa file local đó; Drive lỗi thì giữ file + ghi audit
+  `files_archive_failed`, không xóa; lũy đẳng qua audit
+  `files_archived` + bảng `archived_files` (không lưu lại lần hai);
+  thư mục Drive "Giao Việc IAICT — Bản gốc" id
+  `1tE5uJesfNh3X4t8cm5u4TNKUHfQzZ1d8`, mỗi việc một thư mục con, id
+  lưu `data/drive_archive.json` (600, không commit); Chi tiết việc
+  hiện file đã lưu dưới dạng link Drive thay vì ảnh vỡ. (c) Xem trước:
+  video gốc >512MB chỉ hiện ô tải về, không phát inline; bản nháp
+  video vẫn dùng bản nén ffmpeg. (d) Quét 48h: `scan_waiting_tasks`
+  chạy trong luồng tổng kết sẵn có của webapp (tối đa 1 lần/giờ, qua
+  `web_last_archive_scan`), đo từ audit `submit_output`/`approve_output`
+  (fallback `created_at`); bỏ qua khi có lệnh đăng dở dang, khi chưa
+  đủ 48h, khi không còn file local; audit `files_archived
+  reason=waiting_48h`. (e) Khôi phục: nút "↩️ Tải lại từ Drive" ở Chi
+  tiết việc + tự động tải lại khi bấm Đăng/Đặt lịch mà file thiếu
+  (webapp `_act_publish`/`_act_schedule` và 4 điểm bấm Đăng/Đặt lịch
+  của bot); tải về bằng `drive files get ... alt=media`, nền, kiểm
+  tra đúng kích thước rồi mới xóa bản ghi lưu trữ. (f) Giới hạn 9GB:
+  mọi đường tải lên của webapp (đơn + chia nhỏ, kiểm tra lúc init và
+  lúc ráp) từ chối khi tổng `data/files/` (kể cả `.tmp`) sẽ vượt 9GB
+  kèm thông báo rõ; Thống kê hiện "Đã dùng X / 9.0 GB" + thanh tiến
+  trình. Hàm dùng chung: `archive.archive_task_files` +
+  `archive.restore_task_files` (cả hai nút kích hoạt cùng gọi một
+  chỗ), `scan_waiting_tasks`, `maybe_archive_task`,
+  `maybe_restore_task`. Lệnh botctl mới: `archive-task-files`,
+  `restore-task-files`.
+- Sửa lỗi phát hiện trong lúc probe (gộp vào TD-0024): server không
+  đọc body `{}` của `POST .../chunked/complete` (và `/restore`) nên
+  2 byte thừa dính vào request line tiếp theo trên cùng kết nối
+  keep-alive (`"{}GET /api/tasks/..."` → 501) — làm wizard dừng ở
+  bước 3 ngay sau khi tải xong. Đây cũng chính là lỗi 501 bí ẩn ở
+  TD-0013 (tưởng là tunnel). Sửa tận gốc: `_dispatch` bọc `_route`,
+  `finally` xả (drain) body chưa đọc của mọi POST/PUT/PATCH/DELETE
+  (`_read_json`, `_parse_multipart`, `_chunk_put` đánh dấu đã đọc);
+  có test hồi quy keep-alive (complete rồi GET cùng kết nối → 200).
+- Kiểm thử: webapp 87/87 (75 + 12 test mới TD-0024), bot 268/268
+  (256 + 12 test mới). Probe Playwright trên BẢN SAO DB (DB thật
+  không đổi — kiểm chứng: chỉ thêm 1 dòng `web_notification_reads`
+  do chính người dùng đọc thông báo trong lúc probe; 16 việc, 26 đầu
+  ra, 141 audit đều nguyên): API 25/25 (chunked 120MB thật: init/
+  status/resume/gửi lại miếng/lắp ráp đúng từng byte; lưu trữ sau
+  đăng + khôi phục qua botctl, file thật lên Drive rồi xóa ngay);
+  UI 14/14 (wizard tải 120MB thật lên tới Chi tiết việc 120.0 MB;
+  chặn >2GB ở wizard và Thêm tư liệu; thẻ dung lượng Thống kê;
+  nút Tải lại từ Drive); quét 48h 7/7 (việc PENDING backdate 49h
+  lên Drive + biến khỏi đĩa, trạng thái giữ PENDING, việc mới tạo
+  không bị chạm); khôi phục 48h 11/11 (UI + botctl, file về đúng
+  từng byte). Thư mục Drive gốc đã dọn sạch sau probe.
+- Giới hạn còn tồn tại: (1) tốc độ upload Drive thật với file lớn
+  chưa đo (probe chỉ tải file 14 byte; upload 1GB lên Drive qua
+  proxy mất hàng phút, chạy nền nên không chặn đăng bài); (2) miếng
+  50MB có thể chạm timeout 100s của Cloudflare trên đường truyền
+  rất chậm (~2Mbps → ~200s/miếng; retry sẽ lỗi tiếp — cân nhắc giảm
+  miếng xuống 25MB nếu người dùng hay tải bằng 4G yếu); (3) quota
+  9GB chỉ chặn ở đường tải webapp, chưa chặn file gửi qua Telegram
+  vào bot; (4) việc không bao giờ đăng (hủy/bỏ dở) vẫn chưa có quy
+  tắc dọn — chờ chủ dự án chốt (như đã ghi ở phần Mở); (5) upload
+  Drive chạy nền bằng tiến trình tách riêng, không có hàng đợi bền —
+  nếu máy bị thay giữa lúc worker đang tải lên Drive thì lần tải đó
+  mất, file local vẫn còn (an toàn) và lần quét/đăng sau sẽ thử lại.
+- ⚠️ Phát hiện ngoài phạm vi TD-0024 (cần xử lý riêng): máy chủ bị
+  thay đầu ngày 25/10, `restore-services.sh` đã tạo lại
+  `/etc/default/webapp-giao-viec` nhưng KHÔNG có
+  `TELEGRAM_BOT_TOKEN` (token Mini App người dùng cấp 25/10 chỉ nằm
+  trong file đó + chat) — đăng nhập Mini App sẽ lỗi cho tới khi nhập
+  lại token. Token không lưu ở đâu khác; cần người dùng cấp lại. | ✅ Đã vào SRS x.y
 
 ---
 

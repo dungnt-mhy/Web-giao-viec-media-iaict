@@ -24,9 +24,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from webapp import admin_cli  # noqa: E402
+from webapp import app as app_mod  # noqa: E402
 from webapp import push as push_mod  # noqa: E402
 from webapp.app import (  # noqa: E402
-    ICT, App, daily_summary_data, make_server, maybe_send_daily_summary,
+    ICT, App, daily_summary_data, make_server, maybe_scan_waiting_tasks,
+    maybe_send_daily_summary,
 )
 from webapp.auth import hash_password, verify_password  # noqa: E402
 from webapp.telegram_auth import (  # noqa: E402
@@ -643,19 +645,21 @@ class WebAppTestCase(unittest.TestCase):
         # badge PWA, icon xem thêm, chú thích tải muộn.
         # TD-0018: bản 0.5.5 — version nhất quán + modal không cache
         # lỗi, đồng bộ sống, chú thích Brave.
+        # TD-0024: bản 0.5.11 — version nhất quán + tải chia nhỏ,
+        # lưu trữ Drive + khôi phục + giới hạn 9GB.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.10")
+        self.assertEqual(data["version"], "0.5.11")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.10", html)
+        self.assertIn("?v=0.5.11", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.10", js)
+        self.assertIn("0.5.11", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -736,8 +740,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v18", raw)
-        self.assertIn(b"app.js?v=0.5.10", raw)
+        self.assertIn(b"giao-viec-iaict-v19", raw)
+        self.assertIn(b"app.js?v=0.5.11", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
@@ -1699,6 +1703,315 @@ class WebAppTestCase(unittest.TestCase):
         # TD-0021: a 401 on the Telegram login surfaces the server's
         # real reason instead of the generic session-expired message.
         self.assertIn('if (path === "/api/auth/telegram")', js)
+
+
+    # ------------------------------------------------ TD-0024: chunked
+    def _chunk_init(self, token, code, filename, size):
+        return self.req("POST", "/api/uploads/chunked/init", token=token,
+                        body={"task_code": code, "filename": filename,
+                              "size": size})
+
+    def _chunk_put(self, token, upload_id, index, data):
+        return self.req_bytes(
+            "POST", f"/api/uploads/chunked/{upload_id}/chunk/{index}",
+            body=data, token=token,
+            headers={"Content-Type": "application/octet-stream"})
+
+    def test_chunked_upload_roundtrip_and_resume(self):
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        code = task["code"]
+        content = bytes(range(25))  # 25 bytes -> 3 chunks of 10/10/5
+        old_chunk = app_mod.CHUNK_SIZE_BYTES
+        app_mod.CHUNK_SIZE_BYTES = 10
+        try:
+            status, init, _ = self._chunk_init(
+                writer, code, "clip.bin", len(content))
+            self.assertEqual(status, 201, init)
+            upload_id = init["upload_id"]
+            self.assertEqual(init["total_chunks"], 3)
+            status, raw, _ = self._chunk_put(
+                writer, upload_id, 0, content[0:10])
+            self.assertEqual(status, 200, raw)
+            status, state, _ = self.req(
+                "GET", f"/api/uploads/chunked/{upload_id}", token=writer)
+            self.assertEqual(status, 200, state)
+            self.assertEqual(state["received"], [0])
+            # Re-sending a chunk is idempotent.
+            status, raw, _ = self._chunk_put(
+                writer, upload_id, 0, content[0:10])
+            self.assertEqual(status, 200, raw)
+            for index, part in ((1, content[10:20]), (2, content[20:25])):
+                status, raw, _ = self._chunk_put(
+                    writer, upload_id, index, part)
+                self.assertEqual(status, 200, raw)
+            status, data, _ = self.req(
+                "POST", f"/api/uploads/chunked/{upload_id}/complete",
+                token=writer, body={})
+            self.assertEqual(status, 201, data)
+            saved = self.files_dir / code / "clip.bin"
+            self.assertTrue(saved.exists())
+            self.assertEqual(saved.read_bytes(), content)
+            self.assertEqual([f["name"] for f in data["files"]],
+                             ["clip.bin"])
+        finally:
+            app_mod.CHUNK_SIZE_BYTES = old_chunk
+
+    def test_keepalive_unread_body_does_not_poison_next_request(self):
+        # TD-0024: chunked /complete sends a "{}" body its handler
+        # never reads. Without the _dispatch drain, those 2 bytes
+        # glue onto the next request line on the same keep-alive
+        # connection ("{}GET /api/tasks/..." -> 501) — which broke
+        # the wizard's detail load right after a chunked upload.
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        code = task["code"]
+        old_chunk = app_mod.CHUNK_SIZE_BYTES
+        app_mod.CHUNK_SIZE_BYTES = 10
+        try:
+            status, init, _ = self._chunk_init(writer, code, "k.bin", 25)
+            self.assertIn(status, (200, 201))
+            uid = init["upload_id"]
+            content = bytes(range(25))
+            for i in range(3):
+                status, _raw, _h = self._chunk_put(
+                    writer, uid, i, content[i * 10:(i + 1) * 10])
+                self.assertEqual(status, 200)
+            import http.client
+            conn = http.client.HTTPConnection(
+                "127.0.0.1", self.port, timeout=10)
+            headers = {"Authorization": f"Bearer {writer}",
+                       "Content-Type": "application/json"}
+            conn.request("POST", f"/api/uploads/chunked/{uid}/complete",
+                         body="{}", headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+            self.assertEqual(resp.status, 201, raw)
+            conn.request("GET", f"/api/tasks/{code}", headers=headers)
+            resp = conn.getresponse()
+            data = json.loads(resp.read() or b"{}")
+            conn.close()
+            self.assertEqual(resp.status, 200, data)
+            self.assertEqual(data["task"]["code"], code)
+        finally:
+            app_mod.CHUNK_SIZE_BYTES = old_chunk
+
+    def test_chunked_upload_rejects_bad_input(self):
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        code = task["code"]
+        old_chunk = app_mod.CHUNK_SIZE_BYTES
+        old_max = app_mod.CHUNKED_MAX_FILE_BYTES
+        app_mod.CHUNK_SIZE_BYTES = 10
+        app_mod.CHUNKED_MAX_FILE_BYTES = 100
+        try:
+            status, data, _ = self._chunk_init(
+                writer, code, "to.mp4", 101)
+            self.assertEqual(status, 413, data)
+            status, init, _ = self._chunk_init(
+                writer, code, "clip.bin", 25)
+            self.assertEqual(status, 201, init)
+            upload_id = init["upload_id"]
+            status, raw, _ = self._chunk_put(
+                writer, upload_id, 0, b"short")
+            self.assertEqual(status, 400, raw)
+            status, raw, _ = self._chunk_put(
+                writer, upload_id, 0, b"0123456789")
+            self.assertEqual(status, 200, raw)
+            status, data, _ = self.req(
+                "POST", f"/api/uploads/chunked/{upload_id}/complete",
+                token=writer, body={})
+            self.assertEqual(status, 409, data)
+            status, data, _ = self.req(
+                "GET", "/api/uploads/chunked/" + "0" * 32, token=writer)
+            self.assertEqual(status, 404, data)
+        finally:
+            app_mod.CHUNK_SIZE_BYTES = old_chunk
+            app_mod.CHUNKED_MAX_FILE_BYTES = old_max
+
+    def test_chunked_upload_requires_owner(self):
+        writer = self.login("writer")
+        admin_task, _out = self.make_output("admin", "website")
+        status, data, _ = self._chunk_init(
+            writer, admin_task["code"], "x.bin", 5)
+        self.assertEqual(status, 403, data)
+        own_task, _out = self.make_output("writer", "website")
+        status, init, _ = self._chunk_init(
+            writer, own_task["code"], "x.bin", 5)
+        self.assertEqual(status, 201, init)
+        admin = self.login("admin")
+        status, raw, _ = self._chunk_put(
+            admin, init["upload_id"], 0, b"12345")
+        self.assertEqual(status, 403, raw)
+
+    def test_chunked_upload_quota_refuses(self):
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        old_quota = app_mod.STORAGE_QUOTA_BYTES
+        app_mod.STORAGE_QUOTA_BYTES = 0
+        try:
+            status, data, _ = self._chunk_init(
+                writer, task["code"], "x.bin", 10)
+            self.assertEqual(status, 413, data)
+            self.assertIn("đầy", data["error"])
+        finally:
+            app_mod.STORAGE_QUOTA_BYTES = old_quota
+
+    def test_chunked_upload_after_wizard_create_is_quiet(self):
+        # A chunked upload finishing minutes after the wizard
+        # created the task is still the initial creation: no
+        # TD-0015 "vừa thêm tư liệu" push.
+        import time
+        writer = self.login("writer")
+
+        calls = []
+
+        class FakePush:
+            def notify_users(self, ids, title, body, url="/"):
+                calls.append((list(ids), title, body))
+
+        old_push = self.app.push
+        self.app.push = FakePush()
+        old_chunk = app_mod.CHUNK_SIZE_BYTES
+        app_mod.CHUNK_SIZE_BYTES = 10
+        try:
+            status, data, _ = self.req(
+                "POST", "/api/tasks", token=writer,
+                body={"hint": "Việc mới tinh",
+                      "destinations": ["website"]})
+            self.assertEqual(status, 201, data)
+            code = data["task"]["code"]
+            status, init, _ = self._chunk_init(
+                writer, code, "a.bin", 5)
+            self.assertEqual(status, 201, init)
+            status, raw, _ = self._chunk_put(
+                writer, init["upload_id"], 0, b"12345")
+            self.assertEqual(status, 200, raw)
+            status, data, _ = self.req(
+                "POST", f"/api/uploads/chunked/{init['upload_id']}/complete",
+                token=writer, body={})
+            self.assertEqual(status, 201, data)
+            time.sleep(0.3)
+            self.assertEqual(
+                [c for c in calls if "tư liệu" in c[1] + c[2]], [])
+        finally:
+            self.app.push = old_push
+            app_mod.CHUNK_SIZE_BYTES = old_chunk
+
+    def test_chunked_upload_late_still_notifies(self):
+        import time
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        code = task["code"]
+        with self.store._lock, self.store._conn:
+            self.store._conn.execute(
+                "UPDATE tasks SET created_at = datetime('now', '-1 hour')"
+                " WHERE code = ?", (code,))
+
+        calls = []
+
+        class FakePush:
+            def notify_users(self, ids, title, body, url="/"):
+                calls.append((list(ids), title, body))
+
+        old_push = self.app.push
+        self.app.push = FakePush()
+        old_chunk = app_mod.CHUNK_SIZE_BYTES
+        app_mod.CHUNK_SIZE_BYTES = 10
+        try:
+            status, init, _ = self._chunk_init(
+                writer, code, "b.bin", 5)
+            self.assertEqual(status, 201, init)
+            status, raw, _ = self._chunk_put(
+                writer, init["upload_id"], 0, b"12345")
+            self.assertEqual(status, 200, raw)
+            status, data, _ = self.req(
+                "POST", f"/api/uploads/chunked/{init['upload_id']}/complete",
+                token=writer, body={})
+            self.assertEqual(status, 201, data)
+            deadline = time.time() + 2
+            while time.time() < deadline and not any(
+                    "tư liệu" in c[1] + c[2] for c in calls):
+                time.sleep(0.05)
+            self.assertTrue(
+                any("tư liệu" in c[1] + c[2] for c in calls),
+                "late chunked upload did not notify reviewers")
+        finally:
+            self.app.push = old_push
+            app_mod.CHUNK_SIZE_BYTES = old_chunk
+
+    def test_task_detail_shows_archived_files(self):
+        admin = self.login("admin")
+        task, _out = self.make_output("admin", "website")
+        code = task["code"]
+        self.store.record_archived_file(
+            code, "anh-cu.jpg", "drive-1",
+            "https://drive.example/anh-cu.jpg", 1234)
+        status, detail, _ = self.req("GET", f"/api/tasks/{code}",
+                                     token=admin)
+        self.assertEqual(status, 200)
+        archived = [f for f in detail["files"] if f.get("archived")]
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0]["name"], "anh-cu.jpg")
+        self.assertEqual(archived[0]["url"],
+                         "https://drive.example/anh-cu.jpg")
+
+    def test_restore_endpoint_downloads_back(self):
+        import archive as archive_mod
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        code = task["code"]
+        self.store.record_archived_file(
+            code, "anh.jpg", "drive-anh",
+            "https://drive.example/anh.jpg", 5)
+        old_spawn = archive_mod.spawn_worker
+
+        def fake_spawn(mode, _code, reason=None):
+            return archive_mod.restore_task_files(
+                self.store, self.files_dir, _code,
+                downloader=lambda fid, dest: Path(dest).write_bytes(
+                    b"xxxxx"))
+
+        archive_mod.spawn_worker = fake_spawn
+        try:
+            status, data, _ = self.req(
+                "POST", f"/api/tasks/{code}/restore",
+                token=writer, body={})
+            self.assertEqual(status, 200, data)
+        finally:
+            archive_mod.spawn_worker = old_spawn
+        self.assertTrue((self.files_dir / code / "anh.jpg").exists())
+        self.assertEqual(
+            (self.files_dir / code / "anh.jpg").read_bytes(), b"xxxxx")
+        status, detail, _ = self.req("GET", f"/api/tasks/{code}",
+                                     token=writer)
+        self.assertEqual(
+            [f for f in detail["files"] if f.get("archived")], [])
+
+    def test_restore_endpoint_no_archived_files(self):
+        writer = self.login("writer")
+        task, _out = self.make_output("writer", "website")
+        status, data, _ = self.req(
+            "POST", f"/api/tasks/{task['code']}/restore",
+            token=writer, body={})
+        self.assertEqual(status, 404, data)
+
+    def test_stats_summary_includes_storage(self):
+        admin = self.login("admin")
+        status, data, _ = self.req(
+            "GET", "/api/stats/summary?period=all", token=admin)
+        self.assertEqual(status, 200, data)
+        self.assertIn("storage", data)
+        self.assertGreaterEqual(data["storage"]["used_bytes"], 0)
+        self.assertEqual(data["storage"]["quota_bytes"],
+                         9 * 1024 * 1024 * 1024)
+
+    def test_archive_scan_gate(self):
+        acted = maybe_scan_waiting_tasks(self.app)
+        self.assertEqual(acted, [])
+        self.assertIsNotNone(
+            self.webdb.get_meta("web_last_archive_scan"))
+        self.assertEqual(maybe_scan_waiting_tasks(self.app), [])
 
 
 # ------------------------------------------------------- TD-0020: Mini App

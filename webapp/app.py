@@ -31,6 +31,7 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -51,6 +52,7 @@ from .telegram_auth import (InitDataError, get_bot_token,
 from .push import PushService, default_vapid_path
 
 storage, roles, stats = import_bot_modules()
+import archive as archive_mod  # noqa: E402  (TD-0024: Drive archive)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 SESSION_COOKIE = "webapp_session"
@@ -62,6 +64,21 @@ MIN_PASSWORD_LENGTH = 8
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 #: Sanity cap on a whole multipart request (several files per task).
 MAX_REQUEST_BYTES = 1024 * 1024 * 1024
+
+#: TD-0024: chunked upload. Files over CHUNKED_THRESHOLD_BYTES go
+#: up in CHUNK_SIZE_BYTES pieces (under Cloudflare's 100MB/request
+#: cap and the 100s connection timeout); the server reassembles
+#: them streaming to disk. A reassembled file may be up to
+#: CHUNKED_MAX_FILE_BYTES (2GB, the owner's decision); the single
+#: multipart request keeps its 200MB/file and 1GB/request caps.
+CHUNK_SIZE_BYTES = 50 * 1024 * 1024
+CHUNKED_THRESHOLD_BYTES = 20 * 1024 * 1024
+CHUNKED_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
+#: Unfinished chunked uploads older than this are swept away.
+CHUNK_TMP_TTL_SECONDS = 24 * 3600
+#: TD-0024 (f): all material files on the server (the whole
+#: data/files/ tree, tmp chunks included) may not exceed 9GB.
+STORAGE_QUOTA_BYTES = 9 * 1024 * 1024 * 1024
 
 ICT = timezone(timedelta(hours=7), name="ICT")
 
@@ -283,6 +300,7 @@ class Handler(BaseHTTPRequestHandler):
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
+        self._body_consumed = True
         if not raw:
             return {}
         try:
@@ -315,8 +333,10 @@ class Handler(BaseHTTPRequestHandler):
         }
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            return cgi.FieldStorage(fp=self.rfile, environ=environ,
+            form = cgi.FieldStorage(fp=self.rfile, environ=environ,
                                     keep_blank_values=True)
+        self._body_consumed = True
+        return form
 
     @staticmethod
     def _form_texts(form, name: str):
@@ -384,13 +404,54 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._dispatch("POST")
 
+    def do_DELETE(self):
+        self._dispatch("DELETE")
+
     def do_PATCH(self):
         self._dispatch("PATCH")
 
     def _dispatch(self, method: str) -> None:
+        # TD-0024: drain any request body the handler did not read.
+        # A POST that carries a body (chunked /complete sends "{}")
+        # but whose handler never reads it leaves those bytes in the
+        # socket buffer; BaseHTTPRequestHandler then parses them as
+        # the start of the NEXT request line on the same keep-alive
+        # connection ("{}GET /api/tasks/..." -> 501). That broke the
+        # wizard's detail load right after a chunked upload finished
+        # — and once before, after a restart, in TD-0013, where it
+        # was misread as a tunnel transient.
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        self._body_consumed = False
+        try:
+            self._route(method, path, query)
+        finally:
+            self._drain_request_body(method)
+
+    def _drain_request_body(self, method: str) -> None:
+        """Read (and drop) an unread request body so the next request
+        on this keep-alive connection parses cleanly."""
+        if method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+        if getattr(self, "_body_consumed", True):
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return
+        remaining = length
+        try:
+            while remaining > 0:
+                block = self.rfile.read(min(1024 * 1024, remaining))
+                if not block:
+                    break
+                remaining -= len(block)
+        except (OSError, ValueError):
+            pass
+        self._body_consumed = True
+
+    def _route(self, method: str, path: str, query: dict) -> None:
         try:
             if method in ("GET", "HEAD") and path in STATIC_FILES:
                 return self._serve_static(path)
@@ -417,6 +478,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self._create_task()
             if method == "POST" and path == "/api/uploads":
                 return self._upload_to_task()
+            if method == "POST" and path == "/api/uploads/chunked/init":
+                return self._chunk_init()
+            chunk_status_m = re.fullmatch(
+                r"/api/uploads/chunked/([0-9a-f]{32})", path)
+            if chunk_status_m:
+                uid = chunk_status_m.group(1)
+                if method == "GET":
+                    return self._chunk_status(uid)
+                if method == "DELETE":
+                    return self._chunk_delete(uid)
+            chunk_put_m = re.fullmatch(
+                r"/api/uploads/chunked/([0-9a-f]{32})/chunk/(\d+)", path)
+            if method == "POST" and chunk_put_m:
+                return self._chunk_put(chunk_put_m.group(1),
+                                       int(chunk_put_m.group(2)))
+            chunk_done_m = re.fullmatch(
+                r"/api/uploads/chunked/([0-9a-f]{32})/complete", path)
+            if method == "POST" and chunk_done_m:
+                return self._chunk_complete(chunk_done_m.group(1))
+            task_restore_m = re.fullmatch(
+                r"/api/tasks/([^/]+)/restore", path)
+            if method == "POST" and task_restore_m:
+                return self._restore_task_files(
+                    unquote(task_restore_m.group(1)))
             task_files = re.fullmatch(r"/api/tasks/([^/]+)/files", path)
             if method == "POST" and task_files:
                 return self._add_task_files(unquote(task_files.group(1)))
@@ -627,7 +712,57 @@ class Handler(BaseHTTPRequestHandler):
                 or "application/octet-stream",
                 "url": f"/api/files/{quote(code)}/{quote(name)}",
             })
+        # TD-0024: files archived to Google Drive keep their record
+        # (same name, Drive link) so the detail screen shows a Drive
+        # link instead of a broken thumbnail. A name that is local
+        # again (re-uploaded / restored) is already listed above.
+        try:
+            archived = self.app.store.archived_files_for_task(code)
+        except Exception:
+            archived = []
+        for row in archived:
+            name = row["filename"]
+            if name in seen:
+                continue
+            seen.add(name)
+            files.append({
+                "name": name,
+                "relative_path": f"{code}/{name}",
+                "size": row["size"] or 0,
+                "content_type": mimetypes.guess_type(name)[0]
+                or "application/octet-stream",
+                "url": row["web_view_link"],
+                "archived": True,
+                "drive_file_id": row["drive_file_id"],
+            })
         return files
+
+    @staticmethod
+    def _fmt_bytes(size: int) -> str:
+        units = ["B", "KB", "MB", "GB"]
+        value = float(size)
+        index = 0
+        while value >= 1024 and index < len(units) - 1:
+            value /= 1024
+            index += 1
+        return f"{value:.1f} {units[index]}" if index else f"{int(value)} B"
+
+    def _storage_usage(self) -> int:
+        """Bytes currently under data/files/ (TD-0024 (f))."""
+        return archive_mod.storage_usage_bytes(self.app.files_dir)
+
+    def _check_storage_quota(self, extra_bytes: int) -> None:
+        """Refuse a new upload when the 9GB total would be exceeded
+        (TD-0024 (f)); the message states the reason plainly."""
+        used = self._storage_usage()
+        if used + extra_bytes > STORAGE_QUOTA_BYTES:
+            raise ApiError(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                f"Dung lượng lưu trữ trên máy chủ đã đầy "
+                f"({self._fmt_bytes(used)}/{self._fmt_bytes(STORAGE_QUOTA_BYTES)})"
+                " — không tải thêm được "
+                f"file {self._fmt_bytes(extra_bytes)}. Hãy chờ việc "
+                "đăng xong (file tự chuyển lên Drive) rồi tải lại.")
 
     def _validate_parts(self, parts):
         for part in parts:
@@ -635,6 +770,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(
                     HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                     f"File {part['filename']} vượt quá giới hạn 200MB.")
+        # TD-0024 (f): single-part uploads count against the 9GB
+        # total too. getattr: the validator is also exercised
+        # standalone in tests with a bare handler (no .app).
+        app = getattr(self, "app", None)
+        if app is not None:
+            self._check_storage_quota(sum(p["size"] for p in parts))
 
     def _plan_names(self, code: str, parts):
         directory = self.app.files_dir / code
@@ -689,24 +830,326 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.audit(
             user["telegram_id"], "upload_files", "task", code,
             detail=f"files={len(saved)} via=webapp")
-        if self.app.store.list_outputs(code):
-            # TD-0015: late files on a task that already has channel
-            # cards are only attached to the task — Muse is NOT told
-            # and the task state does not change. Push reviewers and
-            # Admins so the team knows to tell Muse.
-            recipients = [u for u in dict.fromkeys(
-                self._reviewer_ids(exclude=user["telegram_id"])
-                + self._admin_ids())
-                if u != user["telegram_id"]]
-            self._notify_async(
-                recipients,
-                f"📎 {code} vừa thêm tư liệu",
-                f"{code} · {len(saved)} file mới — tư liệu mới chỉ "
-                "gắn vào việc, nhắn Muse nếu muốn dùng.",
-                f"/?task={code}")
+        # TD-0015: late files on a task that already has channel
+        # cards are only attached to the task — Muse is NOT told
+        # and the task state does not change. Push reviewers and
+        # Admins so the team knows to tell Muse.
+        self._notify_late_files(user, code, len(saved))
         task = self.app.store.get_task(code)
         self._send_json(HTTPStatus.CREATED,
                         {"files": self._task_files(task)})
+
+    def _notify_late_files(self, user, code: str,
+                           saved_count: int) -> None:
+        """TD-0015: push reviewers/Admins about files added to a
+        task that already has channel cards (they are only attached
+        to the task — the team must tell Muse to use them)."""
+        if not self.app.store.list_outputs(code):
+            return
+        recipients = [u for u in dict.fromkeys(
+            self._reviewer_ids(exclude=user["telegram_id"])
+            + self._admin_ids())
+            if u != user["telegram_id"]]
+        self._notify_async(
+            recipients,
+            f"📎 {code} vừa thêm tư liệu",
+            f"{code} · {saved_count} file mới — tư liệu mới chỉ "
+            "gắn vào việc, nhắn Muse nếu muốn dùng.",
+            f"/?task={code}")
+
+    def _task_is_fresh_creation(self, user, task) -> bool:
+        """True when this user created the task minutes ago: a
+        chunked upload finishing right after the wizard created the
+        task is still the initial creation, not a late addition —
+        so no TD-0015 push for it (the 'Việc mới' push already
+        went out)."""
+        if task["creator_id"] != user["telegram_id"]:
+            return False
+        try:
+            created = datetime.fromisoformat(task["created_at"])
+        except (TypeError, ValueError):
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - created).total_seconds() < 600
+
+    # --------------------------------------- TD-0024: chunked upload
+    def _chunk_tmp_dir(self) -> Path:
+        return self.app.files_dir / ".tmp"
+
+    def _chunk_meta_path(self, upload_id: str) -> Path:
+        return self._chunk_tmp_dir() / upload_id / "meta.json"
+
+    def _chunk_load_meta(self, upload_id: str):
+        """Meta for an upload id (hex only — anything else is a
+        path-traversal attempt), or None."""
+        if not re.fullmatch(r"[0-9a-f]{32}", upload_id or ""):
+            return None
+        try:
+            return json.loads(
+                self._chunk_meta_path(upload_id).read_text(
+                    encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def _chunk_save_meta(self, meta: dict) -> None:
+        directory = self._chunk_tmp_dir() / meta["upload_id"]
+        directory.mkdir(parents=True, exist_ok=True)
+        self._chunk_meta_path(meta["upload_id"]).write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+    def _chunk_expected_size(self, meta: dict, index: int) -> int:
+        """Bytes chunk `index` must carry (the last one may be
+        short)."""
+        if index == meta["total_chunks"] - 1:
+            return meta["size"] - meta["chunk_size"] * index
+        return meta["chunk_size"]
+
+    def _chunk_received(self, meta: dict) -> list:
+        """Chunk indexes actually on disk with the right size —
+        the authoritative resume state (meta.json may be stale)."""
+        directory = self._chunk_tmp_dir() / meta["upload_id"]
+        received = []
+        for index in range(meta["total_chunks"]):
+            part = directory / f"{index}.part"
+            if part.is_file() \
+                    and part.stat().st_size == self._chunk_expected_size(
+                        meta, index):
+                received.append(index)
+        return received
+
+    def _chunk_require_owner(self, meta, user) -> None:
+        if meta is None:
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           "Không tìm thấy phiên tải lên.")
+        if meta.get("user_id") != user["telegram_id"]:
+            raise ApiError(HTTPStatus.FORBIDDEN,
+                           "Phiên tải lên này không phải của bạn.")
+
+    def _cleanup_stale_chunk_uploads(self) -> None:
+        """Drop unfinished chunked uploads older than 24h (their
+        tmp pieces count against the 9GB quota while they sit)."""
+        tmp = self._chunk_tmp_dir()
+        if not tmp.is_dir():
+            return
+        now = time.time()
+        for entry in tmp.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                meta = json.loads(
+                    (entry / "meta.json").read_text(encoding="utf-8"))
+                created = meta.get("created_at", 0)
+            except (OSError, ValueError):
+                created = entry.stat().st_mtime
+            if now - created > CHUNK_TMP_TTL_SECONDS:
+                shutil.rmtree(entry, ignore_errors=True)
+
+    def _chunk_init(self) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        body = self._read_json()
+        code = str(body.get("task_code") or "").strip()
+        filename = safe_filename(str(body.get("filename") or ""))
+        try:
+            size = int(body.get("size") or 0)
+        except (TypeError, ValueError):
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Kích thước file không hợp lệ.")
+        if not code or not filename:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Thiếu task_code hoặc tên file.")
+        if size <= 0 or size > CHUNKED_MAX_FILE_BYTES:
+            raise ApiError(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                f"File vượt quá giới hạn {self._fmt_bytes(CHUNKED_MAX_FILE_BYTES)} "
+                "cho một file (tải chia nhỏ).")
+        task = self.app.store.get_task(code)
+        if task is None:
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           f"Không tìm thấy việc {code}.")
+        if not (task["creator_id"] == user["telegram_id"]
+                or user["role"] == roles.ROLE_ADMIN):
+            raise ApiError(HTTPStatus.FORBIDDEN,
+                           "Chỉ người tạo việc hoặc Admin mới thêm "
+                           "tư liệu được.")
+        # TD-0024 (f): the whole file counts against the 9GB total
+        # from the start, so a doomed upload is refused at once.
+        self._check_storage_quota(size)
+        self._cleanup_stale_chunk_uploads()
+        total_chunks = (size + CHUNK_SIZE_BYTES - 1) // CHUNK_SIZE_BYTES
+        meta = {
+            "upload_id": secrets.token_hex(16),
+            "task_code": code,
+            "filename": filename,
+            "size": size,
+            "chunk_size": CHUNK_SIZE_BYTES,
+            "total_chunks": total_chunks,
+            "user_id": user["telegram_id"],
+            "created_at": time.time(),
+            "received": [],
+        }
+        self._chunk_save_meta(meta)
+        self._send_json(HTTPStatus.CREATED, {
+            "upload_id": meta["upload_id"],
+            "chunk_size": CHUNK_SIZE_BYTES,
+            "total_chunks": total_chunks,
+            "received": [],
+        })
+
+    def _chunk_status(self, upload_id: str) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        meta = self._chunk_load_meta(upload_id)
+        self._chunk_require_owner(meta, user)
+        received = self._chunk_received(meta)
+        self._send_json(HTTPStatus.OK, {
+            "upload_id": meta["upload_id"],
+            "task_code": meta["task_code"],
+            "filename": meta["filename"],
+            "size": meta["size"],
+            "chunk_size": meta["chunk_size"],
+            "total_chunks": meta["total_chunks"],
+            "received": received,
+        })
+
+    def _chunk_put(self, upload_id: str, index: int) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        meta = self._chunk_load_meta(upload_id)
+        self._chunk_require_owner(meta, user)
+        if index < 0 or index >= meta["total_chunks"]:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Số thứ tự miếng không hợp lệ.")
+        length = int(self.headers.get("Content-Length") or 0)
+        expected = self._chunk_expected_size(meta, index)
+        if length <= 0 or length > CHUNK_SIZE_BYTES \
+                or length != expected:
+            raise ApiError(
+                HTTPStatus.BAD_REQUEST,
+                f"Miếng {index} phải đúng {self._fmt_bytes(expected)}.")
+        directory = self._chunk_tmp_dir() / upload_id
+        tmp_part = directory / f"{index}.part.tmp"
+        part = directory / f"{index}.part"
+        remaining = length
+        with open(tmp_part, "wb") as fh:
+            while remaining > 0:
+                block = self.rfile.read(min(1024 * 1024, remaining))
+                if not block:
+                    break
+                fh.write(block)
+                remaining -= len(block)
+        if remaining > 0 or tmp_part.stat().st_size != length:
+            tmp_part.unlink(missing_ok=True)
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "Miếng tải lên chưa đủ — hãy gửi lại.")
+        self._body_consumed = True
+        os.replace(tmp_part, part)
+        received = self._chunk_received(meta)
+        meta["received"] = received
+        self._chunk_save_meta(meta)
+        self._send_json(HTTPStatus.OK, {
+            "received": received,
+            "total_chunks": meta["total_chunks"],
+            "done": len(received) == meta["total_chunks"],
+        })
+
+    def _chunk_complete(self, upload_id: str) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        meta = self._chunk_load_meta(upload_id)
+        self._chunk_require_owner(meta, user)
+        code = meta["task_code"]
+        task = self.app.store.get_task(code)
+        if task is None:
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           f"Không tìm thấy việc {code}.")
+        received = self._chunk_received(meta)
+        missing = [i for i in range(meta["total_chunks"])
+                   if i not in received]
+        if missing:
+            raise ApiError(
+                HTTPStatus.CONFLICT,
+                f"Còn thiếu {len(missing)} miếng chưa tải lên xong.")
+        tmp_dir = self._chunk_tmp_dir() / upload_id
+        # TD-0024 (f): re-check the quota at assembly time — other
+        # uploads may have grown the total since init. The tmp
+        # pieces already count, so exclude them from the tally.
+        tmp_bytes = sum(
+            (tmp_dir / f"{i}.part").stat().st_size for i in received)
+        if self._storage_usage() - tmp_bytes + meta["size"] \
+                > STORAGE_QUOTA_BYTES:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise ApiError(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "Dung lượng lưu trữ trên máy chủ đã đầy "
+                f"({self._fmt_bytes(STORAGE_QUOTA_BYTES)}) — "
+                "không ráp được file này.")
+        planned = self._plan_names(code, [{"filename": meta["filename"]}])
+        name = planned[0][1]
+        dest = self.app.files_dir / code / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(dest, "wb") as out:
+                for index in range(meta["total_chunks"]):
+                    with open(tmp_dir / f"{index}.part", "rb") as fh:
+                        shutil.copyfileobj(fh, out, length=1024 * 1024)
+        except OSError as exc:
+            dest.unlink(missing_ok=True)
+            raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR,
+                           f"Không ráp được file: {exc}")
+        if dest.stat().st_size != meta["size"]:
+            dest.unlink(missing_ok=True)
+            raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR,
+                           "File ráp xong không đủ dung lượng.")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        file_ids = _json_list(task["file_ids"])
+        if name not in file_ids:
+            file_ids.append(name)
+        self.app.webdb.set_task_file_ids(code, file_ids)
+        self.app.store.audit(
+            user["telegram_id"], "upload_files", "task", code,
+            detail="files=1 via=webapp-chunked")
+        if not self._task_is_fresh_creation(user, task):
+            self._notify_late_files(user, code, 1)
+        task = self.app.store.get_task(code)
+        self._send_json(HTTPStatus.CREATED,
+                        {"files": self._task_files(task)})
+
+    def _chunk_delete(self, upload_id: str) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        meta = self._chunk_load_meta(upload_id)
+        self._chunk_require_owner(meta, user)
+        shutil.rmtree(self._chunk_tmp_dir() / upload_id,
+                      ignore_errors=True)
+        self._send_json(HTTPStatus.OK, {"ok": True})
+
+    # -------------------------------------- TD-0024 (e): restore
+    def _restore_task_files(self, code: str) -> None:
+        user = self._current_user()
+        self._require_granted(user)
+        task = self.app.store.get_task(code)
+        if task is None:
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           f"Không tìm thấy việc {code}.")
+        if not (task["creator_id"] == user["telegram_id"]
+                or user["role"] == roles.ROLE_ADMIN):
+            raise ApiError(HTTPStatus.FORBIDDEN,
+                           "Chỉ người tạo việc hoặc Admin mới tải lại "
+                           "tư liệu được.")
+        spawned = archive_mod.maybe_restore_task(
+            self.app.store, self.app.files_dir, code)
+        if not spawned:
+            raise ApiError(HTTPStatus.NOT_FOUND,
+                           "Việc này không có file nào đang lưu trữ "
+                           "trên Drive.")
+        self._send_json(HTTPStatus.OK, {
+            "ok": True,
+            "message": "Đang tải lại tư liệu từ Drive — file lớn "
+                       "có thể mất vài phút, màn hình sẽ hiện dần "
+                       "khi từng file về đủ.",
+        })
 
     def _upload_to_task(self) -> None:
         if not self._is_multipart():
@@ -1251,6 +1694,10 @@ class Handler(BaseHTTPRequestHandler):
                 detail += f" target={legacy}"
         self.app.store.audit(user["telegram_id"], "publish_requested",
                              "output", output["id"], detail=detail)
+        # TD-0024 (e): the materials may have been archived to
+        # Drive — bring them back before Muse acts on this order.
+        restoring = archive_mod.maybe_restore_task(
+            self.app.store, self.app.files_dir, task["code"])
         body_text = (f"{task['code']} · "
                      f"{storage.channel_label(output['channel'])}")
         if targets:
@@ -1267,6 +1714,9 @@ class Handler(BaseHTTPRequestHandler):
         else:
             message = ("Đã nhận lệnh đăng — Muse sẽ đăng ngay và gửi "
                        "link bài khi xong.")
+        if restoring:
+            message += (" (tư liệu đang được tải lại từ Drive — "
+                        "Muse sẽ đăng khi file về đủ)")
         self._done(output["id"], message)
 
     def _act_publish_abort(self, user, output, task, body):
@@ -1464,6 +1914,10 @@ class Handler(BaseHTTPRequestHandler):
                 detail += f" target={legacy}"
         self.app.store.audit(user["telegram_id"], "schedule_set",
                              "output", output["id"], detail=detail)
+        # TD-0024 (e): the files must be back on the server by the
+        # time this schedule fires — start the restore now.
+        restoring = archive_mod.maybe_restore_task(
+            self.app.store, self.app.files_dir, task["code"])
         if task["creator_id"] != user["telegram_id"]:
             self._notify_async(
                 [task["creator_id"]], "🕐 Đã đặt lịch đăng",
@@ -1471,7 +1925,10 @@ class Handler(BaseHTTPRequestHandler):
                 f"{storage.channel_label(output['channel'])} · "
                 f"{when.strftime('%H:%M %d/%m/%Y')}",
                 f"/?task={task['code']}")
-        self._done(output["id"], f"Đã đặt lịch đăng.{skipped_note}",
+        schedule_note = (" (tư liệu đang được tải lại từ Drive)"
+                         if restoring else "")
+        self._done(output["id"],
+                   f"Đã đặt lịch đăng.{skipped_note}{schedule_note}",
                    extra={"warnings": warnings, "scheduled_at": when_utc,
                           "targets": targets})
 
@@ -1728,6 +2185,11 @@ class Handler(BaseHTTPRequestHandler):
             "output_channel_status": data["output_channel_status"],
             "per_creator": data["per_creator"],
             "video": data["video"],
+            # TD-0024 (f): total material storage on the server.
+            "storage": {
+                "used_bytes": self._storage_usage(),
+                "quota_bytes": STORAGE_QUOTA_BYTES,
+            },
         })
 
     def _stats_export(self, query: dict) -> None:
@@ -1952,7 +2414,44 @@ def _daily_summary_loop(app: App, interval: int = 60) -> None:
             maybe_send_daily_summary(app)
         except Exception as err:  # the loop must survive anything
             print(f"daily summary check failed: {err}")
+        try:
+            maybe_scan_waiting_tasks(app)
+        except Exception as err:  # the loop must survive anything
+            print(f"archive scan failed: {err}")
         time.sleep(interval)
+
+
+#: web_meta key holding the last 48h-archive scan time (TD-0024).
+ARCHIVE_SCAN_META_KEY = "web_last_archive_scan"
+#: At most one 48h scan per hour (the loop itself ticks every 60s).
+ARCHIVE_SCAN_INTERVAL_SECONDS = 3600
+
+
+def maybe_scan_waiting_tasks(app: App, now=None) -> list:
+    """TD-0024 (d): at most once an hour, archive the files of
+    tasks that have waited over 48h in PENDING / APPROVED_WAITING.
+    Reuses the daily-summary background thread — no new service.
+    Returns the acted-on task codes ([] when the hour has not
+    passed yet)."""
+    now = now or datetime.now(timezone.utc)
+    last_raw = app.webdb.get_meta(ARCHIVE_SCAN_META_KEY)
+    if last_raw:
+        try:
+            last = datetime.fromisoformat(last_raw)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if (now - last).total_seconds() \
+                    < ARCHIVE_SCAN_INTERVAL_SECONDS:
+                return []
+        except ValueError:
+            pass
+    acted = archive_mod.scan_waiting_tasks(
+        app.store, app.files_dir, now=now)
+    app.webdb.set_meta(ARCHIVE_SCAN_META_KEY,
+                       now.isoformat(timespec="seconds"))
+    if acted:
+        print(f"archive scan (48h): {', '.join(acted)}")
+    return acted
 
 
 def make_server(host: str, port: int, app: App) -> ThreadingHTTPServer:

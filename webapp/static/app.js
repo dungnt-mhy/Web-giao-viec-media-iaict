@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.10";
+const APP_VERSION = "0.5.11";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -919,6 +919,80 @@ async function renderTasks() {
   await load();
 }
 
+/* ================= TD-0024: chunked upload ====================
+   Files over CHUNKED_THRESHOLD go up in 50MB pieces (under
+   Cloudflare's 100MB/request cap and the 100s timeout), one piece
+   at a time, each retried up to 3 times. The server reassembles
+   them streaming to disk. The upload id is kept in localStorage
+   so a reload resumes from the pieces the server already has. */
+const CHUNK_SIZE = 50 * 1024 * 1024;
+const CHUNKED_THRESHOLD = 20 * 1024 * 1024;
+const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+
+function chunkedResumeKey(taskCode, file) {
+  return `gv-chunked:${taskCode}:${file.name}:${file.size}`;
+}
+function chunkedResumeGet(taskCode, file) {
+  try {
+    const raw = localStorage.getItem(chunkedResumeKey(taskCode, file));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function chunkedResumeSet(taskCode, file, uploadId) {
+  try { localStorage.setItem(chunkedResumeKey(taskCode, file), JSON.stringify({ uploadId })); } catch {}
+}
+function chunkedResumeClear(taskCode, file) {
+  try { localStorage.removeItem(chunkedResumeKey(taskCode, file)); } catch {}
+}
+
+async function uploadChunked(file, taskCode, onProgress) {
+  let uploadId = chunkedResumeGet(taskCode, file)?.uploadId || null;
+  let totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  let received = new Set();
+  if (uploadId) {
+    try {
+      const status = await api(`/api/uploads/chunked/${uploadId}`);
+      if (status.filename === file.name && status.size === file.size && status.task_code === taskCode) {
+        totalChunks = status.total_chunks;
+        received = new Set(status.received || []);
+      } else uploadId = null;
+    } catch { uploadId = null; }
+  }
+  if (!uploadId) {
+    const init = await apiJson("/api/uploads/chunked/init", "POST", { task_code: taskCode, filename: file.name, size: file.size });
+    uploadId = init.upload_id;
+    totalChunks = init.total_chunks;
+    received = new Set(init.received || []);
+    chunkedResumeSet(taskCode, file, uploadId);
+  }
+  const report = () => onProgress && onProgress(received.size / totalChunks);
+  report();
+  for (let i = 0; i < totalChunks; i++) {
+    if (received.has(i)) continue;
+    const blob = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
+    let ok = false;
+    for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+      try {
+        const data = await api(`/api/uploads/chunked/${uploadId}/chunk/${i}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: blob,
+        });
+        received = new Set(data.received || []);
+        ok = true;
+      } catch (err) {
+        if (attempt === 3) throw err;
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+    report();
+  }
+  const data = await apiJson(`/api/uploads/chunked/${uploadId}/complete`, "POST", {});
+  chunkedResumeClear(taskCode, file);
+  onProgress && onProgress(1);
+  return data;
+}
+
 /* ============================== create ============================== */
 
 function newWizard() {
@@ -927,6 +1001,7 @@ function newWizard() {
     files: [],
     hint: "",
     destinations: new Set(["website", "facebook", "instagram"]),
+    createdCode: null, // TD-0024: task created before big uploads
   };
 }
 
@@ -940,7 +1015,7 @@ async function renderCreate() {
       <div class="drop-box">
         <p class="drop-icon">📎</p>
         <p><strong>Chọn ảnh, video hoặc tệp tư liệu</strong></p>
-        <p class="muted drop-note">Tối đa 200MB mỗi file. File được lưu thẳng vào hồ sơ việc như tư liệu gửi qua Telegram.</p>
+        <p class="muted drop-note">Tối đa 2GB mỗi file. File trên 20MB tải lên từng phần, có tiếp tục khi rớt mạng. File được lưu thẳng vào hồ sơ việc như tư liệu gửi qua Telegram.</p>
         <input type="file" id="wizardFiles" multiple accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip">
       </div>
       <div class="preview-grid">${w.files.map((file, i) => previewTile(file, i)).join("")}</div>`;
@@ -990,7 +1065,7 @@ async function renderCreate() {
     $("#wizardFiles").addEventListener("change", (event) => {
       const incoming = [...event.target.files];
       for (const file of incoming) {
-        if (file.size > 200 * 1024 * 1024) { toast(`File ${file.name} vượt quá 200MB.`, true); continue; }
+        if (file.size > MAX_FILE_BYTES) { toast(`File ${file.name} vượt quá 2GB.`, true); continue; }
         w.files.push(file);
       }
       renderCreate();
@@ -1027,16 +1102,51 @@ async function submitWizard() {
   if (!w.destinations.size) { toast("Hãy chọn ít nhất một kênh đăng.", true); return; }
   const btn = $("#wizardSubmit");
   btn.disabled = true; btn.textContent = "⏳ Đang gửi cho Muse…";
+  const big = w.files.filter((f) => f.size > CHUNKED_THRESHOLD);
   try {
-    const form = new FormData();
-    form.append("hint", w.hint);
-    for (const key of w.destinations) form.append("destinations", key);
-    for (const file of w.files) form.append("files", file, file.name);
-    const data = await api("/api/tasks", { method: "POST", body: form });
+    let code = w.createdCode || null;
+    if (!big.length && !code) {
+      // Small files only: one multipart request, as before.
+      const form = new FormData();
+      form.append("hint", w.hint);
+      for (const key of w.destinations) form.append("destinations", key);
+      for (const file of w.files) form.append("files", file, file.name);
+      const data = await api("/api/tasks", { method: "POST", body: form });
+      state.wizard = newWizard();
+      toast(`✅ Đã tạo việc ${data.task.code} và gửi cho Muse.`);
+      tgHaptic("success"); // TD-0020
+      navigate("detail", data.task.code);
+      return;
+    }
+    // TD-0024: a big file cannot ride one multipart request past
+    // Cloudflare (100MB) — create the task first (JSON, no files),
+    // then attach each file (big ones in chunks, small ones as
+    // before). createdCode survives a failed attempt so a retry
+    // resumes into the SAME task instead of duplicating it.
+    if (!code) {
+      const created = await apiJson("/api/tasks", "POST", { hint: w.hint, destinations: [...w.destinations] });
+      code = created.task.code;
+      w.createdCode = code;
+    }
+    let doneCount = 0;
+    const showProgress = () => { btn.textContent = `⏳ Đang tải tư liệu… ${doneCount}/${w.files.length} file`; };
+    showProgress();
+    for (const file of w.files) {
+      if (file.size > CHUNKED_THRESHOLD) {
+        await uploadChunked(file, code, (frac) => { btn.textContent = `⏳ Đang tải ${file.name}… ${Math.round(frac * 100)}%`; });
+      } else {
+        const form = new FormData();
+        form.append("task_code", code);
+        form.append("files", file, file.name);
+        await api("/api/uploads", { method: "POST", body: form });
+      }
+      doneCount++;
+      showProgress();
+    }
     state.wizard = newWizard();
-    toast(`✅ Đã tạo việc ${data.task.code} và gửi cho Muse.`);
+    toast(`✅ Đã tạo việc ${code} và gửi cho Muse.`);
     tgHaptic("success"); // TD-0020
-    navigate("detail", data.task.code);
+    navigate("detail", code);
   } catch (err) {
     btn.disabled = false; btn.textContent = "🚀 Chốt! Gửi Muse";
     tgHaptic("error"); // TD-0020
@@ -1247,8 +1357,10 @@ async function renderDetail() {
         <form id="addFilesForm" style="margin-top:1rem">
           <label class="field">Thêm tư liệu<input type="file" id="addFiles" multiple></label>
           <button class="btn btn-soft btn-small" type="submit">⬆️ Tải thêm tư liệu</button>
+          <div id="addFilesProgress"></div>
           ${outputs.length ? `<p class="muted small">Tư liệu mới chỉ gắn vào việc, Muse chưa được báo — nhắn Muse nếu muốn dùng tư liệu mới.</p>` : ""}
-        </form>` : ""}
+        </form>
+        ${files.some((f) => f.archived) ? `<button class="btn btn-soft btn-small" id="restoreFiles" type="button" style="margin-top:.6rem">↩️ Tải lại ${files.filter((f) => f.archived).length} file từ Drive</button>` : ""}` : ""}
       </div>
     </details>
     <h3 style="margin:1.2rem 0 .7rem">Thẻ kênh (${outputs.length})</h3>
@@ -1259,21 +1371,66 @@ async function renderDetail() {
     event.preventDefault();
     const chosen = [...$("#addFiles").files];
     if (!chosen.length) { toast("Hãy chọn file trước.", true); return; }
-    const form = new FormData();
-    form.append("task_code", task.code);
-    for (const file of chosen) form.append("files", file, file.name);
+    // TD-0024: the missing size check — a >2GB file is refused
+    // at once, and big files go up in chunks with a progress bar.
+    const tooBig = chosen.filter((f) => f.size > MAX_FILE_BYTES);
+    if (tooBig.length) { toast(`File ${tooBig[0].name} vượt quá 2GB.`, true); return; }
+    const submitBtn = addForm.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    const progressBox = $("#addFilesProgress");
     try {
-      await api("/api/uploads", { method: "POST", body: form });
+      const small = chosen.filter((f) => f.size <= CHUNKED_THRESHOLD);
+      if (small.length) {
+        const form = new FormData();
+        form.append("task_code", task.code);
+        for (const file of small) form.append("files", file, file.name);
+        await api("/api/uploads", { method: "POST", body: form });
+      }
+      for (const file of chosen.filter((f) => f.size > CHUNKED_THRESHOLD)) {
+        const row = document.createElement("div");
+        row.className = "upload-row";
+        row.innerHTML = `<span>${esc(file.name)}</span><div class="upload-bar"><i style="width:0%"></i></div><span class="upload-pct">0%</span>`;
+        progressBox.appendChild(row);
+        await uploadChunked(file, task.code, (frac) => {
+          row.querySelector("i").style.width = `${Math.round(frac * 100)}%`;
+          row.querySelector(".upload-pct").textContent = `${Math.round(frac * 100)}%`;
+        });
+        row.querySelector(".upload-pct").textContent = "✅ Xong";
+      }
       toast("✅ Đã thêm tư liệu.");
       renderDetail();
     } catch (err) { toast(err.message, true); }
+    finally { submitBtn.disabled = false; }
+  });
+  const restoreBtn = $("#restoreFiles");
+  if (restoreBtn) restoreBtn.addEventListener("click", async () => {
+    restoreBtn.disabled = true;
+    try {
+      const data = await apiJson(`/api/tasks/${encodeURIComponent(code)}/restore`, "POST", {});
+      toast(`✅ ${data.message}`);
+    } catch (err) { toast(err.message, true); }
+    finally { restoreBtn.disabled = false; }
   });
   bindOutputActions(() => renderDetail());
 }
 
 function fileTile(file) {
+  // TD-0024: an archived file lives on Drive now — show its Drive
+  // link instead of a broken thumbnail.
+  if (file.archived) {
+    const name = file.url
+      ? `<a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name)}</a>`
+      : esc(file.name);
+    return `<div class="file-tile"><div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">💾</div><div class="file-name">${name}<br><span class="muted">Đã lưu trữ trên Drive · ${fmtBytes(file.size)}</span></div></div>`;
+  }
   const isImage = (file.content_type || "").startsWith("image/");
   const isVideo = (file.content_type || "").startsWith("video/");
+  // TD-0024 (c): a >512MB original is never cached by Cloudflare,
+  // so inline playback would stream the whole file through the
+  // tunnel on every view — offer the download instead.
+  if (isVideo && file.size > 512 * 1024 * 1024) {
+    return `<div class="file-tile"><div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">🎬</div><div class="file-name"><a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name)}</a><br><span class="muted">Video lớn (${fmtBytes(file.size)}) — bấm để tải về xem</span></div></div>`;
+  }
   const media = isImage ? `<img src="${esc(file.url)}" alt="">`
     : isVideo ? `<video src="${esc(file.url)}" controls preload="metadata"></video>`
     : `<div class="file-ph" style="height:130px;display:grid;place-items:center;font-size:2.4rem">📄</div>`;
@@ -1599,6 +1756,10 @@ async function renderStats() {
       <div class="card metric"><span>✅ Đã đăng</span><strong>${data.published_total}</strong></div>
       <div class="card metric"><span>🎬 Video đã dựng / đã đăng</span><strong>${data.video.drafted} / ${data.video.published}</strong><span>dọc ${data.video.published_vertical} · ngang ${data.video.published_horizontal}</span></div>
     </div>
+    ${data.storage ? `<div class="card" style="margin-top:1rem"><h3>💾 Dung lượng lưu trữ trên máy chủ</h3>
+      <p class="meta-line">Đã dùng <strong>${fmtBytes(data.storage.used_bytes)}</strong> / ${fmtBytes(data.storage.quota_bytes)}</p>
+      <div class="upload-bar"><i style="width:${Math.min(100, Math.round(data.storage.used_bytes / data.storage.quota_bytes * 100))}%"></i></div>
+      <p class="muted small">File tư liệu tự chuyển lên Google Drive khi đăng xong hoặc chờ quá 48h, nên dung lượng này thường xuyên được giải phóng.</p></div>` : ""}
     <div class="chart-wrap" style="margin-top:1rem">
       <section class="card"><h3>Đầu ra theo trạng thái</h3>${statusPairs.length ? barChartSVG(statusPairs) : `<p class="muted">Chưa có dữ liệu.</p>`}</section>
       <section class="card"><h3>Đầu ra theo kênh</h3>${channelTotals.length ? donutSVG(channelTotals) : `<p class="muted">Chưa có dữ liệu.</p>`}</section>
