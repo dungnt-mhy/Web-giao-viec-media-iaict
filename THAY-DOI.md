@@ -584,7 +584,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   APP_VERSION, ?v=0.5.6, SW cache v14). Kiểm thử: webapp + bot phải
   xanh; test mới: mục chỉ hiện với người duyệt, bấm mở đúng màn Việc
   lọc APPROVED_WAITING, nút Thêm active ở mục mới, badge đếm đúng.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ SRS 1.5
 
 ---
 
@@ -643,7 +643,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   xanh; test mới: kiểm chứng initData (đúng cho qua, sai/tamper/hết
   hạn bị từ chối, user lạ/không vai trò bị từ chối), menu button +
   /miniap, entry Mini App trả đúng shell.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ SRS 1.5
 
 ---
 
@@ -685,7 +685,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   (VERSION, APP_VERSION, ?v=0.5.8, SW cache v15→v16). Kiểm thử:
   webapp + bot phải xanh, thêm test cho body lỗi 401 và dấu vết
   frontend.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ SRS 1.5
 
 ---
 
@@ -717,7 +717,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   cho mẫu mới; probe Playwright mobile 390 + desktop 1440
   (sáng + tối): nút Xem thêm/Thu gọn hoạt động, đếm đúng số mục,
   không tràn ngang, scroll vùng riêng trên desktop.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ SRS 1.5
 
 ---
 
@@ -746,7 +746,7 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   vết mới; probe Playwright mobile 390 + desktop 1440 (sáng +
   tối): chụp hàng chip, chip đang chọn khác biệt rõ, không tràn
   ngang.
-- Trạng thái SRS: ⏳ Chờ cập nhật
+- Trạng thái SRS: ✅ SRS 1.5
 
 ---
 
