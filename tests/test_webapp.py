@@ -1857,6 +1857,15 @@ class WebAppTestCase(unittest.TestCase):
         finally:
             app_mod.STORAGE_QUOTA_BYTES = old_quota
 
+    def test_storage_quota_single_definition(self):
+        # TD-0025: the 9GB quota has ONE definition (bot storage.py);
+        # the webapp re-exports it so the Telegram intake and the
+        # web uploads can never drift apart.
+        self.assertEqual(app_mod.STORAGE_QUOTA_BYTES,
+                         storage.STORAGE_QUOTA_BYTES)
+        self.assertEqual(app_mod.STORAGE_QUOTA_BYTES,
+                         9 * 1024 * 1024 * 1024)
+
     def test_chunked_upload_after_wizard_create_is_quiet(self):
         # A chunked upload finishing minutes after the wizard
         # created the task is still the initial creation: no

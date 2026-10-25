@@ -76,9 +76,11 @@ CHUNKED_THRESHOLD_BYTES = 20 * 1024 * 1024
 CHUNKED_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
 #: Unfinished chunked uploads older than this are swept away.
 CHUNK_TMP_TTL_SECONDS = 24 * 3600
-#: TD-0024 (f): all material files on the server (the whole
-#: data/files/ tree, tmp chunks included) may not exceed 9GB.
-STORAGE_QUOTA_BYTES = 9 * 1024 * 1024 * 1024
+#: TD-0024 (f) / TD-0025: all material files on the server (the
+#: whole data/files/ tree, tmp chunks included) may not exceed
+#: 9GB. Single definition lives in storage.py; re-exported here
+#: so the bot's Telegram intake uses the same quota.
+STORAGE_QUOTA_BYTES = storage.STORAGE_QUOTA_BYTES
 
 ICT = storage.ICT  # single definition lives in storage.py; re-exported here
 

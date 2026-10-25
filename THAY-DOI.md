@@ -932,7 +932,79 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   `/etc/default/webapp-giao-viec` nhưng KHÔNG có
   `TELEGRAM_BOT_TOKEN` (token Mini App người dùng cấp 25/10 chỉ nằm
   trong file đó + chat) — đăng nhập Mini App sẽ lỗi cho tới khi nhập
-  lại token. Token không lưu ở đâu khác; cần người dùng cấp lại. | ✅ Đã vào SRS x.y
+  lại token. Token không lưu ở đâu khác; cần người dùng cấp lại. | ⏳ Chờ cập nhật
+
+---
+
+### TD-0025 — Giới hạn 9GB áp dụng cả với file gửi qua Telegram (bản 0.5.12)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án. Đính chính quy tắc
+  lưu trữ (sau TD-0024): "gửi qua đâu thì trên R2 cũng không quá
+  9GB" — giới hạn tổng 9GB áp dụng cho mọi file trên kho của app,
+  bất kể gửi qua webapp hay qua Telegram. TD-0024 mới chặn ở đường
+  tải webapp (giới hạn còn tồn tại số 3 của TD-0024); đường Telegram
+  (bot tải file từ Telegram về data/files/) chưa chặn.
+- "R2" là cách chủ dự án gọi kho file của app (dung lượng lưu trữ
+  đằng sau Cloudflare); thực tế hiện tại file nằm trên ổ đĩa máy chủ
+  (data/files/), chưa dùng Cloudflare R2 thật. Không di chuyển kho
+  trong TD này.
+- File lưu trên máy chủ Telegram (bản sao Telegram giữ của mọi
+  ảnh/video gửi cho bot) không tính vào 9GB, không đụng tới.
+- Quy tắc đồng bộ (đã có ở TD-0024, chỉ nhắc lại): file trên R2
+  được đồng bộ lên Drive; sau khi xóa khỏi R2 (đăng xong hoặc quá
+  48h chờ) thì chỗ tham chiếu tới file đó thành link Drive.
+- Nội dung thay đổi: bot kiểm tra tổng dung lượng data/files/
+  (kể cả .tmp) trước khi lưu file gửi qua Telegram. Lựa chọn của chủ
+  dự án (25/10): khi đầy thì GỬI THẲNG LÊN DRIVE — bot tải file từ
+  Telegram về tệp tạm, đẩy lên Drive (cùng thư mục lưu trữ "Giao
+  Việc IAICT — Bản gốc"), ghi bản ghi file ở trạng thái đã lưu trữ
+  kèm link Drive (giống file lưu trữ ở TD-0024), rồi xóa tệp tạm;
+  không giữ bản local. Khi cần dùng (nháp/đăng) thì luồng khôi phục
+  của TD-0024 tải lại từ Drive. Nếu đẩy lên Drive lỗi thì giữ file
+  trên đĩa local (vượt quota tạm thời), ghi audit + báo Admin, để
+  lần quét 48h sau lưu trữ lại — không bao giờ làm mất file của
+  người dùng. Dưới ngưỡng 9GB thì giữ nguyên như hiện tại (lưu
+  local).
+- Ảnh hưởng: bot (đường nhận file Telegram) + webapp (dùng chung
+  hàm tính tổng dung lượng nếu có). Bản 0.5.11 → 0.5.12. Kiểm thử:
+  bot + webapp phải xanh; thêm test cho: file Telegram tới khi còn
+  chỗ thì nhận, khi đầy thì đúng hành vi đã chọn; tổng tính cả .tmp;
+  dung lượng lưu trên Telegram không tính.
+- Đã xong (25/10, bản 0.5.12): lựa chọn "gửi thẳng lên Drive" đã
+  chốt. Một định nghĩa quota duy nhất ở bot `storage.py`
+  (`STORAGE_QUOTA_BYTES`); webapp/app.py chỉ tái xuất nó (test
+  `test_storage_quota_single_definition` khóa lại). `archive.py`
+  thêm `would_exceed_quota(files_dir, extra, quota=None, used=None)`
+  (điểm chèn test: quota nhỏ thay cho 9GB thật) và
+  `direct_to_drive(...)` — tái dùng đường upload + bản ghi của
+  TD-0024 (thư mục theo việc, retry, `archived_files`, audit
+  `files_archived reason=direct_to_drive`, `files_archive_failed`
+  khi lỗi), không bao giờ tự xóa file local. Bot
+  `_maybe_download_files` tải về tệp tạm trong `data/files/.tmp`
+  rồi mới quyết định (đo tổng dùng TRƯỚC khi tải để không đếm
+  trùng; file đi thẳng Drive không bao giờ đặt chân vào thư mục
+  việc): dưới ngưỡng thì `os.replace` về chỗ cũ như trước; đầy
+  thì gửi thẳng lên Drive rồi xóa tệp tạm; Drive lỗi thì giữ file
+  local (vượt quota tạm thời), ghi audit và nhắn Admin (giờ VN).
+  Khôi phục TD-0024 nhận file đi đường này như file lưu trữ bình
+  thường (cùng bản ghi `archived_files`).
+- Kiểm thử: webapp 88/88 (87 + 1 test mới), bot 277/277 (269 + 8
+  test mới: quota tính cả .tmp, direct_to_drive up/record/lỗi/
+  lũy đẳng, intake dưới ngưỡng/đầy/lỗi Drive/tải lỗi). Probe trên
+  BẢN SAO DB 18/18 (DB thật sha không đổi): intake dưới ngưỡng
+  về local như cũ; đầy (ép quota) thì file thật lên Drive, không
+  còn file local, thẻ file ở Chi tiết việc hiện đúng trạng thái
+  lưu trữ + link Drive, khôi phục qua API về đúng từng byte; Drive
+  lỗi thì giữ local + Admin nhận tin nhắn (giờ VN). Thư mục Drive
+  probe đã dọn sạch. Sửa nhỏ trong lúc probe: tin nhắn Admin hết
+  ".." khi lỗi kết thúc bằng dấu chấm.
+- Giới hạn còn tồn tại: (1) file Telegram lớn (video) vẫn phải tải
+  về tệp tạm rồi mới đẩy lên Drive — tốn gấp đôi băng thông cho
+  file đó (Telegram → máy chủ → Drive), không tránh được khi chưa
+  có upload trực tiếp Telegram → Drive; (2) quota tính bằng cách
+  duyệt cây data/files/ mỗi lần nhận file — đủ nhanh ở quy mô
+  hiện tại, sẽ chậm dần nếu có hàng nghìn file; (3) file gửi qua
+  Telegram vẫn giới hạn 20MB của Bot API (không đổi).
+- Trạng thái SRS: ⏳ Chờ cập nhật
 
 ---
 
