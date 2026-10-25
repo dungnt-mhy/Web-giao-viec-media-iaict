@@ -647,19 +647,21 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         # TD-0024: bản 0.5.11 — version nhất quán + tải chia nhỏ,
         # lưu trữ Drive + khôi phục + giới hạn 9GB.
+        # TD-0025: bản 0.5.12 — version nhất quán + giới hạn 9GB
+        # áp dụng cả đường Telegram (gửi thẳng lên Drive khi đầy).
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.11")
+        self.assertEqual(data["version"], "0.5.12")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.11", html)
+        self.assertIn("?v=0.5.12", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.11", js)
+        self.assertIn("0.5.12", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -740,8 +742,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v19", raw)
-        self.assertIn(b"app.js?v=0.5.11", raw)
+        self.assertIn(b"giao-viec-iaict-v20", raw)
+        self.assertIn(b"app.js?v=0.5.12", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)

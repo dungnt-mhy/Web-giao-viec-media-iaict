@@ -997,6 +997,10 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   lỗi thì giữ local + Admin nhận tin nhắn (giờ VN). Thư mục Drive
   probe đã dọn sạch. Sửa nhỏ trong lúc probe: tin nhắn Admin hết
   ".." khi lỗi kết thúc bằng dấu chấm.
+- Sửa sau kiểm chứng độc lập (25/10): test
+  `test_ui40_version_and_new_nav_markup` còn ghi cứng 0.5.11/v19
+  nên webapp báo 1 lỗi trong 88 test — cập nhật lên 0.5.12/v20,
+  webapp 88/88 xanh trở lại; đã đẩy kèm commit sửa test.
 - Giới hạn còn tồn tại: (1) file Telegram lớn (video) vẫn phải tải
   về tệp tạm rồi mới đẩy lên Drive — tốn gấp đôi băng thông cho
   file đó (Telegram → máy chủ → Drive), không tránh được khi chưa
