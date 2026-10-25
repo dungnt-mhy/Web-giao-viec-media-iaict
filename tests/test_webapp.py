@@ -645,17 +645,17 @@ class WebAppTestCase(unittest.TestCase):
         # lỗi, đồng bộ sống, chú thích Brave.
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.7")
+        self.assertEqual(data["version"], "0.5.8")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.7", html)
+        self.assertIn("?v=0.5.8", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.7", js)
+        self.assertIn("0.5.8", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -723,8 +723,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v15", raw)
-        self.assertIn(b"app.js?v=0.5.7", raw)
+        self.assertIn(b"giao-viec-iaict-v16", raw)
+        self.assertIn(b"app.js?v=0.5.8", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
@@ -1614,6 +1614,11 @@ class WebAppTestCase(unittest.TestCase):
         status, data, _ = self.req(
             "POST", "/api/auth/telegram", {"init_data": signed})
         self.assertEqual(status, 401, data)
+        # TD-0021: the 401 body must carry the specific reason so the
+        # client (and the server log) can tell a bad signature apart
+        # from a missing/expired initData.
+        self.assertEqual(
+            data["error"], "Chữ ký xác thực Telegram không hợp lệ.")
 
     def test_telegram_login_unknown_and_roleless_are_403(self):
         self._with_test_token()
@@ -1652,6 +1657,9 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("/api/auth/telegram", js)
         self.assertIn("syncTelegramChrome", js)
         self.assertIn("tgHaptic", js)
+        # TD-0021: a 401 on the Telegram login surfaces the server's
+        # real reason instead of the generic session-expired message.
+        self.assertIn('if (path === "/api/auth/telegram")', js)
 
 
 # ------------------------------------------------------- TD-0020: Mini App
@@ -1993,12 +2001,42 @@ class TelegramInitDataTests(unittest.TestCase):
             validate_init_data(sign_init_data(fields, TEST_BOT_TOKEN),
                                TEST_BOT_TOKEN)
 
-    def test_signature_field_is_excluded_from_check_string(self):
-        # Telegram's Ed25519 third-party-validation field must not
-        # break the HMAC path: it is excluded from the check string.
+    def test_signature_field_is_included_in_check_string(self):
+        # TD-0021: real initData always carries ``signature`` and
+        # Telegram's HMAC hash covers it — only ``hash`` is excluded
+        # from the HMAC check string (``signature`` is excluded only
+        # from the separate Ed25519 third-party construction). The old
+        # code excluded it here too, so every real Mini App login was
+        # refused while signature-less fixtures kept passing.
         signed = _signed_init_data(777001, signature="deadbeef0123")
         user = validate_init_data(signed, TEST_BOT_TOKEN)
         self.assertEqual(user["id"], 777001)
+
+    def test_signature_excluded_hash_is_rejected(self):
+        # TD-0021 negative control: a hash computed the old way
+        # (signature left out of the check string) must not validate.
+        import hashlib as _hashlib
+        import hmac as _hmac
+        import time as _time
+        from urllib.parse import urlencode
+
+        fields = {
+            "auth_date": str(int(_time.time())),
+            "query_id": "TESTQUERY123",
+            "user": json.dumps({"id": 777001, "first_name": "TG",
+                                "username": "tgtest"},
+                               ensure_ascii=False, separators=(",", ":")),
+            "signature": "deadbeef0123",
+        }
+        check = "\n".join(f"{k}={fields[k]}" for k in sorted(fields)
+                           if k != "signature")
+        secret = _hmac.new(b"WebAppData", TEST_BOT_TOKEN.encode(),
+                           _hashlib.sha256).digest()
+        digest = _hmac.new(secret, check.encode(),
+                           _hashlib.sha256).hexdigest()
+        raw = urlencode(dict(fields, hash=digest))
+        with self.assertRaises(InitDataError):
+            validate_init_data(raw, TEST_BOT_TOKEN)
 
 
 if __name__ == "__main__":

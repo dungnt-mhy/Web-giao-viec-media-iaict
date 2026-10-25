@@ -46,7 +46,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import VERSION
 from .auth import hash_password, new_session_token, verify_password
 from .db import WebDB, bot_dir, default_db_path, import_bot_modules
-from .telegram_auth import InitDataError, get_bot_token, validate_init_data
+from .telegram_auth import (InitDataError, get_bot_token,
+                            init_data_field_keys, validate_init_data)
 from .push import PushService, default_vapid_path
 
 storage, roles, stats = import_bot_modules()
@@ -539,6 +540,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             tg_user = validate_init_data(str(init_data), token)
         except InitDataError as err:
+            # TD-0021: diagnostic only — message + field NAMES, never
+            # values, hashes, the token or the raw initData.
+            print(f"[telegram-auth] Mini App login refused: {err} "
+                  f"(fields: {','.join(init_data_field_keys(str(init_data)))})",
+                  flush=True)
             raise ApiError(HTTPStatus.UNAUTHORIZED, str(err))
         user = self.app.webdb.get_user(tg_user["id"])
         if user is None or not user["role"]:

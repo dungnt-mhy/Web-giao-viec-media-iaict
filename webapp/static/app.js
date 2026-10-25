@@ -34,7 +34,7 @@ const ROLE_OPTIONS = [
 
 /* Shown in the UI (Thông báo / Người dùng) so a stale cached shell is
    visible at a glance — TD-0009. Keep in step with the server VERSION. */
-const APP_VERSION = "0.5.7";
+const APP_VERSION = "0.5.8";
 
 /* Status filter chips on the Việc screen, in the owner's order. */
 const STATUS_CHIPS = [
@@ -177,6 +177,13 @@ async function api(path, options = {}) {
   if (response.status === 401 && !path.startsWith("/api/auth/login")) {
     try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch {}
     showLogin();
+    // TD-0021: for the Telegram login, surface the server's real
+    // reason instead of the generic session-expired message — the
+    // generic text hid the actual cause during TD-0020 testing.
+    if (path === "/api/auth/telegram") {
+      const data = await response.json().catch(() => ({}));
+      if (data.error) throw new Error(data.error);
+    }
     throw new Error("Phiên đăng nhập đã hết hạn.");
   }
   const type = response.headers.get("Content-Type") || "";

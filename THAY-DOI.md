@@ -647,6 +647,48 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
 
 ---
 
+### TD-0021 — Chẩn đoán lỗi đăng nhập Mini App thật: ghi lý do từ chối + hiện đúng lý do (bản 0.5.8)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án (mở Mini App thật
+  trên điện thoại thì hiện "Phiên đăng nhập đã hết hạn.").
+- Chẩn đoán trước khi sửa: token bot đã xác minh ĐÚNG bằng getMe
+  trực tiếp (200, đúng id 8884085259, đúng @iaict_media_bot); bộ kiểm
+  chứng initData đã qua initData thực tế (đủ field, chữ ký dummy,
+  tên có dấu + emoji, photo_url có query) đều trả 200; nhưng 3 lần mở
+  Mini App thật (09:45-09:46 ngày 25/10) đều bị POST
+  /api/auth/telegram trả 401. Nguyên nhân thật chưa biết vì thông báo
+  "Phiên đăng nhập đã hết hạn." là câu chung chung mà `api()` ném ra
+  cho MỌI 401 (kể cả khi server đã trả lý do cụ thể trong body) —
+  lý do thật của server bị che mất.
+- Nội dung thay đổi: (a) server ghi log chẩn đoán mỗi lần
+  POST /api/auth/telegram bị từ chối — CHỈ message lỗi + danh sách
+  TÊN field có trong initData (không log giá trị, hash, token hay
+  initData nguyên văn); (b) `api()` với 401 ở đúng
+  /api/auth/telegram thì hiện đúng message của server thay vì câu
+  chung chung.
+- Nguyên nhân gốc (tìm ra cùng ngày nhờ log TD-0021 + đối chiếu tài
+  liệu Telegram): bộ kiểm chứng loại cả `signature` khỏi
+  data-check-string — SAI. Tài liệu Telegram (core.telegram.org/
+  bots/webapps và docs.telegram-mini-apps.com/platform/init-data)
+  quy định đường HMAC chỉ loại `hash`; `signature` chỉ bị loại ở
+  đường kiểm chứng Ed25519 bên thứ ba (cấu trúc khác, có tiền tố
+  `bot_id:WebAppData`). initData thật luôn có `signature` nên mọi
+  lần đăng nhập thật đều lệch HMAC → 401 "Chữ ký xác thực Telegram
+  không hợp lệ.", trong khi fixture test không có `signature` nên
+  vẫn đậu — test cũ `test_signature_field_is_excluded_from_check_
+  string` còn khẳng định hành vi sai. Sửa: chỉ loại `hash` (cả
+  `validate_init_data` lẫn `sign_init_data` dùng chung
+  `_EXCLUDED_FIELDS`); test cũ đổi thành
+  `test_signature_field_is_included_in_check_string` + thêm control
+  âm `test_signature_excluded_hash_is_rejected`. Không đổi phân
+  quyền hay luồng đăng nhập.
+- Ảnh hưởng: chỉ chẩn đoán + thông báo lỗi. Bản 0.5.7 → 0.5.8
+  (VERSION, APP_VERSION, ?v=0.5.8, SW cache v15→v16). Kiểm thử:
+  webapp + bot phải xanh, thêm test cho body lỗi 401 và dấu vết
+  frontend.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
+---
+
 ## Mục chờ cập nhật vào SRS
 
 - **TD-0006** — ✅ Đã tổng hợp vào **SRS 1.1** ngày 24/10/2026 (đóng GĐ2).

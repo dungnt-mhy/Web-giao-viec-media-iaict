@@ -3,11 +3,14 @@
 Implements the HMAC validation from
 https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app:
 
-- ``data-check-string``: every received field EXCEPT ``hash`` (and
-  ``signature`` — the Ed25519 third-party-validation field, which
-  Telegram excludes from the check string as well), sorted by key,
-  joined as ``key=<value>`` with ``"\\n"`` separators. Values are the
-  URL-decoded values.
+- ``data-check-string``: every received field EXCEPT ``hash``,
+  sorted by key, joined as ``key=<value>`` with ``"\\n"`` separators.
+  Values are the URL-decoded values. NOTE (TD-0021): ``signature``
+  is INCLUDED here — it is excluded only from the separate Ed25519
+  third-party-validation check string (a different construction that
+  prepends ``bot_id:WebAppData``), not from this HMAC one. Excluding
+  it broke every real Mini App login (real initData always carries
+  ``signature``) while signature-less test fixtures kept passing.
 - ``secret_key = HMAC_SHA256(key=b"WebAppData", msg=bot_token)``.
 - ``expected = HMAC_SHA256(key=secret_key, msg=data-check-string)``
   (hex), compared with the received ``hash`` via ``hmac.compare_digest``.
@@ -38,8 +41,10 @@ DEFAULT_MAX_AGE_SECONDS = 24 * 3600
 #: Clock-skew allowance for an ``auth_date`` slightly in the future.
 _FUTURE_SKEW_SECONDS = 300
 
-#: Fields that are signatures themselves and never enter the check string.
-_EXCLUDED_FIELDS = ("hash", "signature")
+#: Fields that never enter the HMAC check string: only ``hash`` itself
+#: (it is the value being verified). ``signature`` stays IN — see the
+#: module docstring (TD-0021).
+_EXCLUDED_FIELDS = ("hash",)
 
 
 class InitDataError(ValueError):
@@ -59,6 +64,18 @@ def _parse_fields(init_data: str) -> dict:
     for key, value in parse_qsl(init_data, keep_blank_values=True):
         fields.setdefault(key, value)
     return fields
+
+
+def init_data_field_keys(init_data: str) -> list:
+    """Sorted field NAMES present in an initData string (TD-0021).
+
+    Safe for diagnostics: keys only, never values, hashes or tokens.
+    Returns [] when the string cannot be parsed at all.
+    """
+    try:
+        return sorted(_parse_fields(init_data).keys())
+    except InitDataError:
+        return []
 
 
 def validate_init_data(init_data: str, token: str,
