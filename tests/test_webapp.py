@@ -649,19 +649,21 @@ class WebAppTestCase(unittest.TestCase):
         # lưu trữ Drive + khôi phục + giới hạn 9GB.
         # TD-0025: bản 0.5.12 — version nhất quán + giới hạn 9GB
         # áp dụng cả đường Telegram (gửi thẳng lên Drive khi đầy).
+        # TD-0026: bản 0.5.13 — version nhất quán + Graph API đăng
+        # Fanpage (ID trang đúng 1319112221296020).
         status, data, _ = self.req("GET", "/api/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["version"], "0.5.12")
+        self.assertEqual(data["version"], "0.5.13")
         admin = self.login("admin")
         status, raw, _ = self.req_bytes("GET", "/", token=admin)
         html = raw.decode("utf-8")
-        self.assertIn("?v=0.5.12", html)
+        self.assertIn("?v=0.5.13", html)
         self.assertIn('id="moreSheet"', html)
         self.assertIn('id="moreScrim"', html)
         self.assertIn('id="sideCollapseBtn"', html)
         status, raw, _ = self.req_bytes("GET", "/app.js", token=admin)
         js = raw.decode("utf-8")
-        self.assertIn("0.5.12", js)
+        self.assertIn("0.5.13", js)
         self.assertIn("fab-circle", js)
         # TD-0015: helper khóa nơi chờ, badge, icon xem thêm, chú
         # thích tải muộn, icon cảnh báo đăng lỗi.
@@ -742,8 +744,8 @@ class WebAppTestCase(unittest.TestCase):
         self.assertIn("Brave", js)
         self.assertIn("Đã gửi thông báo thử tới", js)
         status, raw, _ = self.req_bytes("GET", "/sw.js")
-        self.assertIn(b"giao-viec-iaict-v20", raw)
-        self.assertIn(b"app.js?v=0.5.12", raw)
+        self.assertIn(b"giao-viec-iaict-v21", raw)
+        self.assertIn(b"app.js?v=0.5.13", raw)
         self.assertIn(b"setAppBadge", raw)
         self.assertIn(b"gv-push", raw)
         self.assertIn(b"postMessage", raw)
@@ -807,10 +809,10 @@ class WebAppTestCase(unittest.TestCase):
         _task, out = self.make_output("writer", "facebook",
                                       status="APPROVED_WAITING")
         self.store.set_output_fb_request(
-            out["id"], ["profile", "page_61595515900524"])
+            out["id"], ["profile", "page_1319112221296020"])
         status, data, _ = self.action(
             admin, out["id"], "publish",
-            {"targets": ["profile", "page_61595515900524"]})
+            {"targets": ["profile", "page_1319112221296020"]})
         self.assertEqual(status, 409, data)
         self.assertIn("đang chờ", json.dumps(data, ensure_ascii=False))
         # Mixed request: the locked place is skipped, the open one
@@ -820,10 +822,10 @@ class WebAppTestCase(unittest.TestCase):
         self.store.set_output_fb_request(out2["id"], ["profile"])
         status, data, _ = self.action(
             admin, out2["id"], "publish",
-            {"targets": ["profile", "page_61595515900524"]})
+            {"targets": ["profile", "page_1319112221296020"]})
         self.assertEqual(status, 200, data)
         st = self.store.fb_state(self.store.get_output(out2["id"]))
-        self.assertEqual(st["request"], ["page_61595515900524"])
+        self.assertEqual(st["request"], ["page_1319112221296020"])
         self.assertIn("bỏ qua", data.get("message", ""))
         # Abort drops the recorded request, unlocking the places.
         _task3, out3 = self.make_output("writer", "facebook",
@@ -1098,7 +1100,7 @@ class WebAppTestCase(unittest.TestCase):
                             for e in entries))
         # TD-0013: the legacy single target also lands in the
         # multi-place request set.
-        self.assertTrue(any("targets=page_61595515900524" in (e["detail"] or "")
+        self.assertTrue(any("targets=page_1319112221296020" in (e["detail"] or "")
                             for e in entries))
         status, _d, _ = self.action(
             admin, output["id"], "publish", {"target": "khac"})
@@ -1116,18 +1118,18 @@ class WebAppTestCase(unittest.TestCase):
         self.assertEqual(status, 422, data)
         self.assertEqual(data["code"], "target_required")
         self.assertEqual([t["key"] for t in data["targets"]],
-                         ["profile", "page_61595515900524"])
+                         ["profile", "page_1319112221296020"])
         status, data, _ = self.action(
             admin, output["id"], "publish",
-            {"targets": ["profile", "page_61595515900524"]})
+            {"targets": ["profile", "page_1319112221296020"]})
         self.assertEqual(status, 200, data)
         row = self.store.get_output(output["id"])
         self.assertEqual(json.loads(row["publish_targets"]),
-                         ["profile", "page_61595515900524"])
+                         ["profile", "page_1319112221296020"])
         self.assertEqual(json.loads(row["fb_target_set"]),
-                         ["profile", "page_61595515900524"])
+                         ["profile", "page_1319112221296020"])
         entries = self.audits_for("publish_requested", output["id"])
-        self.assertTrue(any("targets=profile,page_61595515900524"
+        self.assertTrue(any("targets=profile,page_1319112221296020"
                             in (e["detail"] or "") for e in entries))
         # Empty / unknown target lists are rejected.
         _t2, out2 = self.make_output("admin", "facebook")
@@ -1141,18 +1143,18 @@ class WebAppTestCase(unittest.TestCase):
         _t3, fb = self.make_output("admin", "facebook")
         status, data, _ = self.action(
             admin, fb["id"], "schedule",
-            {"preset": "60", "targets": ["page_61595515900524"]})
+            {"preset": "60", "targets": ["page_1319112221296020"]})
         self.assertEqual(status, 200, data)
         row = self.store.get_output(fb["id"])
         self.assertEqual(json.loads(row["publish_targets"]),
-                         ["page_61595515900524"])
+                         ["page_1319112221296020"])
         self.assertEqual(row["publish_target"], "page")
         # Targets endpoint (used by both modals).
         status, data, _ = self.req("GET", "/api/facebook-targets",
                                    token=admin)
         self.assertEqual(status, 200)
         self.assertEqual([t["key"] for t in data["targets"]],
-                         ["profile", "page_61595515900524"])
+                         ["profile", "page_1319112221296020"])
 
     def test_schedule_unschedule_and_close_warning(self):
         admin = self.login("admin")

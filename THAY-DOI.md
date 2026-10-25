@@ -1010,6 +1010,13 @@ mà không bỏ sót và không phải lục lại lịch sử trò chuyện.
   Telegram vẫn giới hạn 20MB của Bot API (không đổi).
 - Trạng thái SRS: ⏳ Chờ cập nhật
 
+### TD-0026 — Nối Meta Graph API vào nút Đăng: bài Fanpage đăng thẳng qua API, không qua trình duyệt (bản 0.5.13)
+- Ngày: 25/10/2026 — Người yêu cầu: chủ dự án (nối tiếp đường Graph API đã mở ngày 25/10: app "IAICT Publisher", System User token không thời hạn đã lưu vào custom.meta-graph, đã kiểm chứng đăng nháp + xóa).
+- Nội dung thay đổi: bot tự đăng bài lên Fanpage qua Graph API khi nơi đăng là Fanpage (không mở trình duyệt, không còn thẻ Allow từng ảnh); bài đăng lên trang cá nhân giữ nguyên đường trình duyệt (API của Meta không đăng được lên trang cá nhân). Luồng đăng/đặt lịch/thu hồi qua Telegram và webapp giữ nguyên giao diện và audit; chỉ đổi "tay đăng" bên dưới đối với nơi Fanpage. Sửa ID trang Minhy dùng cho API: 1319112221296020 (ID tài sản trong Business Settings) thay cho số 61595515900524 ghi ngày 23/10 (API từ chối); `GET /api/facebook-targets` trả về ID đã sửa.
+- Ảnh hưởng: bot (module mới, worker đăng/thu hồi qua API, di trú ID trang), webapp (chỉ kiểm chứng `GET /api/facebook-targets`, không đổi giao diện). Không gộp SRS trong TD này.
+- Trạng thái: ✅ Đã xong (25/10/2026). Bot 290/290 (277 + 13 test mới TD-0026), webapp 88/88, bản 0.5.13. Probe trên bản sao DB: đăng thử chưa công khai rồi thu hồi qua API đều xác minh được, DB thật sha không đổi. Máy chủ bị thay giữa chừng đã khôi phục đủ 5 service, health 0.5.13 cả local lẫn public.
+- Trạng thái SRS: ⏳ Chờ cập nhật
+
 ---
 
 ## Mục chờ cập nhật vào SRS
